@@ -624,6 +624,35 @@ function DeviceIntegrationSettings() {
   );
 }
 
+function ComputerIntegrationSettings() {
+  const { scope, connectedEnvironments } = useSettingsScope();
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  const projectScope = scope.kind === "project" || scope.kind === "checkout";
+
+  return (
+    <SettingsSection id="computer-use" title="Computer use">
+      <SettingsRow
+        {...searchableSetting("agent-computer-access")}
+        serverScoped
+        settingKeys={["enableAgentComputerAccess"]}
+        description="Allow agents to inspect and control desktop apps on this server through MCP."
+        control={
+          <ScopedSwitch
+            settingKeys={["enableAgentComputerAccess"]}
+            checked={settings.enableAgentComputerAccess}
+            disabled={projectScope || connectedEnvironments.length === 0}
+            aria-label="Agent computer access"
+            onCheckedChange={(checked) =>
+              updateSettings({ enableAgentComputerAccess: Boolean(checked) })
+            }
+          />
+        }
+      />
+    </SettingsSection>
+  );
+}
+
 function DeviceIntegrationControls({
   environmentId,
   enabled,
@@ -1456,6 +1485,7 @@ export function IntegrationsSettingsPanel() {
         )}
       </SettingsSection>
       <DeviceIntegrationSettings />
+      <ComputerIntegrationSettings />
     </SettingsPageContainer>
   );
 }

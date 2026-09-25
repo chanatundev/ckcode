@@ -34,6 +34,7 @@ import * as IpcChannels from "../ipc/channels.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import { normalizeDesktopUpdateReleaseNotes } from "./releaseNotes.ts";
 import { resolveDefaultDesktopUpdateChannel } from "./updateChannels.ts";
+import { compareSemverVersions } from "@t3tools/shared/semver";
 import {
   createInitialDesktopUpdateState,
   reduceDesktopUpdateStateOnCheckFailure,
@@ -745,6 +746,22 @@ export const make = Effect.gen(function* () {
             yield* logUpdaterInfo("ignoring update that does not match selected channel", {
               version: info.version,
               channel: state.channel,
+            });
+            const checkedAt = yield* currentIsoTimestamp;
+            yield* setState(reduceDesktopUpdateStateOnNoUpdate(state, checkedAt));
+            yield* Ref.set(lastLoggedDownloadMilestoneRef, -1);
+            return;
+          }
+
+          const installedVersion = environment.runtimeInfo.version;
+          if (
+            state.channel === "nightly" &&
+            resolveDefaultDesktopUpdateChannel(installedVersion) === "nightly" &&
+            compareSemverVersions(info.version, installedVersion) < 0
+          ) {
+            yield* logUpdaterInfo("ignoring older nightly update", {
+              installedVersion,
+              availableVersion: info.version,
             });
             const checkedAt = yield* currentIsoTimestamp;
             yield* setState(reduceDesktopUpdateStateOnNoUpdate(state, checkedAt));

@@ -58,6 +58,7 @@ import {
   type ThreadTitleMessage,
 } from "../../textGeneration/ThreadTitleContext.ts";
 import { canReplaceThreadTitle, DEFAULT_THREAD_TITLE } from "../threadTitles.ts";
+import { addIssueReferenceContext } from "../issueReferenceContext.ts";
 import {
   resolveSourceControlWriterModelSelection,
   ServerSettingsService,
@@ -851,7 +852,13 @@ const make = Effect.gen(function* () {
     if (input.modelSelection !== undefined) {
       threadModelSelections.set(input.threadId, input.modelSelection);
     }
-    const normalizedInput = toNonEmptyProviderInput(input.messageText);
+    const promptWithIssueDetails = yield* Effect.promise(() =>
+      addIssueReferenceContext(input.messageText),
+    );
+    const promptWithGoal = thread.goal?.trim()
+      ? `Persistent thread goal: ${thread.goal}\n\n${promptWithIssueDetails}`
+      : promptWithIssueDetails;
+    const normalizedInput = toNonEmptyProviderInput(promptWithGoal);
     const normalizedAttachments = input.attachments ?? [];
     const activeSession = yield* providerService
       .listSessions()

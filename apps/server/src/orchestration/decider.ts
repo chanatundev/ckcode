@@ -1025,6 +1025,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
                 },
               }
             : {}),
+          ...(command.goal !== undefined ? { goal: command.goal } : {}),
           ...(command.regenerateTitle === true
             ? {
                 titleState: {

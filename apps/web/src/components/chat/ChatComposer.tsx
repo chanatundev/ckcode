@@ -244,6 +244,11 @@ import {
 import { useEnvironmentQuery } from "~/state/query";
 import { useDebouncedValue } from "~/state/queries";
 import { ProviderModelPicker } from "./ProviderModelPicker";
+import { PipelinePromptBuilder } from "./PipelinePromptBuilder";
+import {
+  ThreadWorkflowPromptDialog,
+  type ThreadWorkflowMode,
+} from "./ThreadWorkflowPromptDialog";
 import { resolveModelPickerSelectedModel } from "./ModelPickerContent";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
@@ -947,6 +952,7 @@ import { hasProviderSetup } from "./ProviderStatusBanner";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
+  isProviderInstancePickerReady,
   NO_PROVIDER_MODEL_SELECTION,
   sortProviderInstanceEntries,
   type ProviderInstanceEntry,
@@ -1444,6 +1450,11 @@ export interface ChatComposerProps {
   onSend: (e?: { preventDefault: () => void }, intent?: ComposerSubmissionIntent) => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
+  onStartThreadWorkflow: (input: {
+    mode: ThreadWorkflowMode;
+    task: string;
+    modelSelection: ModelSelection;
+  }) => Promise<boolean>;
   onRespondToApproval: (
     requestId: ApprovalRequestId,
     decision: ProviderApprovalDecision,
@@ -1560,6 +1571,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onSend,
     onInterrupt,
     onImplementPlanInNewThread,
+    onStartThreadWorkflow,
     onRespondToApproval,
     onSelectActivePendingUserInputOption,
     onAdvanceActivePendingUserInput,
@@ -2117,6 +2129,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const [isComposerFooterCompact, setIsComposerFooterCompact] = useState(false);
   const [isComposerPrimaryActionsCompact, setIsComposerPrimaryActionsCompact] = useState(false);
   const [isComposerModelPickerOpen, setIsComposerModelPickerOpen] = useState(false);
+  const [isPipelinePromptBuilderOpen, setIsPipelinePromptBuilderOpen] = useState(false);
+  const [pipelineInitialTask, setPipelineInitialTask] = useState("");
+  const [threadWorkflowMode, setThreadWorkflowMode] = useState<ThreadWorkflowMode | null>(null);
+  const [threadWorkflowInitialTask, setThreadWorkflowInitialTask] = useState("");
   const isMobileViewport = useMediaQuery("max-sm");
   const {
     isComposerFocused,
@@ -2363,6 +2379,38 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           label: "/model",
           description: "Switch response model for this thread",
         },
+        {
+          id: "slash:pipeline",
+          type: "slash-command",
+          command: "pipeline",
+          label: "/pipeline",
+          description: "Build a Plan → Build → Review prompt",
+        },
+        {
+          id: "slash:goal",
+          type: "slash-command",
+          command: "goal",
+          label: "/goal",
+          description: "View, set, or clear this thread's persistent goal",
+        },
+        ...(_isServerThread
+          ? ([
+              {
+                id: "slash:handoff",
+                type: "slash-command",
+                command: "handoff",
+                label: "/handoff",
+                description: "Continue this thread with another provider",
+              },
+              {
+                id: "slash:fork",
+                type: "slash-command",
+                command: "fork",
+                label: "/fork",
+                description: "Continue this conversation in a new thread",
+              },
+            ] as const)
+          : []),
         ...(planModeUiEnabled
           ? ([
               {
@@ -2403,7 +2451,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         type: "skill" as const,
         provider: selectedProvider,
         skill,
-        label: `/skill:${skill.name}`,
+        label: `/${skill.name}`,
         description:
           skill.shortDescription ??
           skill.description ??
@@ -3606,6 +3654,34 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return;
       }
       if (item.type === "slash-command") {
+        if (item.command === "pipeline") {
+          const remainingPrompt =
+            snapshot.value.slice(0, trigger.rangeStart) + snapshot.value.slice(trigger.rangeEnd);
+          const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
+            expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+            focusEditorAfterReplace: false,
+          });
+          if (applied) {
+            setPipelineInitialTask(remainingPrompt.trim());
+            setIsPipelinePromptBuilderOpen(true);
+            setComposerHighlightedItemId(null);
+          }
+          return;
+        }
+        if (item.command === "handoff" || item.command === "fork") {
+          const remainingPrompt =
+            snapshot.value.slice(0, trigger.rangeStart) + snapshot.value.slice(trigger.rangeEnd);
+          const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
+            expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+            focusEditorAfterReplace: false,
+          });
+          if (applied) {
+            setThreadWorkflowInitialTask(remainingPrompt.trim());
+            setThreadWorkflowMode(item.command);
+            setComposerHighlightedItemId(null);
+          }
+          return;
+        }
         if (item.command === "model") {
           const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
             expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
@@ -3615,6 +3691,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             setComposerHighlightedItemId(null);
             setIsComposerModelPickerOpen(true);
           }
+          return;
+        }
+        if (item.command === "goal") {
+          const replacement = "/goal ";
+          const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
+            snapshot.value,
+            trigger.rangeEnd,
+            replacement,
+          );
+          const applied = applyPromptReplacement(
+            trigger.rangeStart,
+            replacementRangeEnd,
+            replacement,
+            { expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd) },
+          );
+          if (applied) setComposerHighlightedItemId(null);
           return;
         }
         if (!planModeUiEnabled) return;
@@ -6103,6 +6195,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // Render
   // ------------------------------------------------------------------
   return (
+    <>
     <form
       ref={composerFormRef}
       onSubmit={submitComposer}
@@ -7052,5 +7145,35 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         </ComposerSurface.Main>
       </div>
     </form>
+    {isPipelinePromptBuilderOpen ? (
+      <PipelinePromptBuilder
+        open={isPipelinePromptBuilderOpen}
+        onOpenChange={setIsPipelinePromptBuilderOpen}
+        task={pipelineInitialTask}
+        entries={providerInstanceEntries}
+        models={modelOptionsByInstance}
+        activeSelection={{ instanceId: selectedInstanceId, model: selectedModel }}
+        onLoadPrompt={setPromptFromTraits}
+      />
+    ) : null}
+    {threadWorkflowMode !== null ? (
+      <ThreadWorkflowPromptDialog
+        key={`${threadWorkflowMode}:${selectedModelSelection.instanceId}:${selectedModelSelection.model}`}
+        mode={threadWorkflowMode}
+        open
+        onOpenChange={(open) => {
+          if (!open) setThreadWorkflowMode(null);
+        }}
+        task={threadWorkflowInitialTask}
+        sourceProvider={selectedProvider}
+        activeSelection={selectedModelSelection}
+        entries={providerInstanceEntries.filter(isProviderInstancePickerReady)}
+        models={modelOptionsByInstance}
+        onStart={({ task, modelSelection }) =>
+          onStartThreadWorkflow({ mode: threadWorkflowMode, task, modelSelection })
+        }
+      />
+    ) : null}
+    </>
   );
 });

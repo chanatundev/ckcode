@@ -123,12 +123,14 @@ interface DiffPanelProps {
   mode?: DiffPanelMode;
   composerDraftTarget: ScopedThreadRef | DraftId;
   workspaceMutationId: string | null;
+  onWalkthrough?: () => void;
 }
 
 export default function DiffPanel({
   mode = "inline",
   composerDraftTarget,
   workspaceMutationId,
+  onWalkthrough,
 }: DiffPanelProps) {
   const { resolvedTheme } = useTheme();
   const settings = useClientSettings();
@@ -889,6 +891,11 @@ export default function DiffPanel({
             </TooltipPopup>
           </Tooltip>
         )}
+        {diffFileKeys.length > 0 && onWalkthrough ? (
+          <Button type="button" variant="secondary" size="xs" onClick={onWalkthrough}>
+            Walk through
+          </Button>
+        ) : null}
         <ToggleGroup
           aria-label="Diff layout"
           className="shrink-0"

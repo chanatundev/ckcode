@@ -41,7 +41,11 @@ import { useHardwareKeyboardCommand } from "../keyboard/hardwareKeyboardCommands
 import { useThreadJumpShortcuts } from "../keyboard/threadKeyboardShortcuts";
 import { useHomeListOptions } from "../home/home-list-options";
 import { buildHomeListFilterMenu } from "../home/home-list-filter-menu";
-import { buildHomeProjectScopes } from "../home/homeThreadList";
+import {
+  buildHomeProjectScopes,
+  filterHomeProjectsWithoutOpenThreads,
+  sortHomeProjectScopes,
+} from "../home/homeThreadList";
 import { SwipeableScrollGateProvider, useSwipeableScrollGate } from "../home/thread-swipe-actions";
 import { usePendingTaskListActions } from "../home/usePendingTaskListActions";
 import { useThreadListActions } from "../home/useThreadListActions";
@@ -63,6 +67,7 @@ import {
   ThreadListV2ShowMoreRow,
   ThreadListV2SnoozedShelfHeader,
 } from "./thread-list-v2-items";
+import { SettledProjectList } from "./SettledProjectList";
 import { useThreadRowProviderInstanceResolver } from "./thread-provider-instance";
 import {
   buildThreadListV2Items,
@@ -214,6 +219,16 @@ function ThreadNavigationSidebarPane(
       }),
     [options.projectGroupingMode, options.selectedEnvironmentId, projects],
   );
+  const sortedProjectScopes = useMemo(
+    () =>
+      sortHomeProjectScopes({
+        scopes: projectScopes,
+        threads,
+        pendingTasks,
+        projectSortOrder: options.projectSortOrder,
+      }),
+    [options.projectSortOrder, pendingTasks, projectScopes, threads],
+  );
   const projectFilterOptions = useMemo(
     () =>
       projectScopes.map((scope) => ({
@@ -328,6 +343,30 @@ function ThreadNavigationSidebarPane(
     }
     return supported;
   }, [serverConfigs]);
+  const settledProjectScopes = useMemo(
+    () =>
+      filterHomeProjectsWithoutOpenThreads({
+        scopes: sortedProjectScopes,
+        threads,
+        settlementEnvironmentIds,
+        snoozeEnvironmentIds,
+        queuedThreadKeys,
+        now: new Date().toISOString(),
+        selectedProjectKey,
+        searchQuery: props.searchQuery,
+      }),
+    [
+      nowMinute,
+      props.searchQuery,
+      queuedThreadKeys,
+      settlementEnvironmentIds,
+      selectedProjectKey,
+      snoozeEnvironmentIds,
+      snoozeWakeTick,
+      sortedProjectScopes,
+      threads,
+    ],
+  );
   const pinningEnvironmentIds = useMemo(() => {
     const supported = new Set<EnvironmentId>();
     for (const [environmentId, config] of serverConfigs) {
@@ -921,6 +960,13 @@ function ThreadNavigationSidebarPane(
               : "No threads yet"}
     </Text>
   );
+  const settledProjectSection = (
+    <SettledProjectList
+      projects={settledProjectScopes}
+      onOpenProject={props.onNewThreadInProject}
+    />
+  );
+  const listEmptyComponent = settledProjectScopes.length > 0 ? settledProjectSection : listEmpty;
 
   if (props.nativeChrome) {
     return (
@@ -988,7 +1034,8 @@ function ThreadNavigationSidebarPane(
                 scrollEventThrottle={16}
                 showsVerticalScrollIndicator={false}
                 style={styles.threadList}
-                ListEmptyComponent={listEmpty}
+                ListFooterComponent={listItems.length > 0 ? settledProjectSection : null}
+                ListEmptyComponent={listEmptyComponent}
               />
             </GestureDetector>
           </SwipeableScrollGateProvider>
@@ -1021,7 +1068,9 @@ function ThreadNavigationSidebarPane(
             : { paddingBottom: insets.bottom }
         }
       >
-        {Platform.OS === "android" && listItems.length === 0 ? (
+        {Platform.OS === "android" &&
+        listItems.length === 0 &&
+        settledProjectScopes.length === 0 ? (
           <View className="flex-1 items-center justify-center">{listEmpty}</View>
         ) : (
           <SwipeableScrollGateProvider enabled={swipeEnabled}>
@@ -1053,7 +1102,8 @@ function ThreadNavigationSidebarPane(
                 scrollEventThrottle={16}
                 showsVerticalScrollIndicator={false}
                 style={styles.threadList}
-                ListEmptyComponent={listEmpty}
+                ListFooterComponent={listItems.length > 0 ? settledProjectSection : null}
+                ListEmptyComponent={listEmptyComponent}
               />
             </GestureDetector>
           </SwipeableScrollGateProvider>

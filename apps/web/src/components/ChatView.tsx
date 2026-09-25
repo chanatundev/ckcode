@@ -124,6 +124,7 @@ import {
   collapseExpandedComposerCursor,
   type ComposerSubmissionIntent,
   parseStandaloneComposerSlashCommand,
+  parseStandaloneComposerGoalCommand,
 } from "../composer-logic";
 import {
   createMessageAttachmentPreviewProjector,
@@ -364,6 +365,7 @@ import {
 } from "../state/entities";
 import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
+import type { ThreadWorkflowMode } from "./chat/ThreadWorkflowPromptDialog";
 import { createPageScrollController, type PageScrollKey } from "./chat/pageScrollController";
 import { isTimelineScrollTarget } from "./chat/timelineScrollTarget";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
@@ -731,6 +733,40 @@ function formatOutgoingPrompt(params: {
   const caps = getProviderModelCapabilities(params.models, params.model, params.provider);
   const promptEffort = resolvePromptInjectedEffort(caps, params.effort);
   return applyClaudePromptEffortPrefix(params.text, promptEffort);
+}
+
+function buildThreadWorkflowPrompt(input: {
+  mode: ThreadWorkflowMode;
+  sourceTitle: string;
+  goal: string | null | undefined;
+  messages: ReadonlyArray<ChatMessage>;
+  task: string;
+}): string {
+  const transcript = input.messages
+    .filter((message) => message.role === "user" || message.role === "assistant")
+    .slice(-18)
+    .map((message) => {
+      const label = message.role === "user" ? "User" : "Assistant";
+      const text = message.text.trim();
+      return text ? `${label}: ${text.slice(0, 2_000)}` : "";
+    })
+    .filter(Boolean)
+    .join("\n\n")
+    .slice(-12_000);
+  const task = input.task.trim() || "Continue the current work from the history below.";
+
+  return [
+    `Continue work from the ${input.mode} of the T3 Code thread: ${input.sourceTitle}`,
+    ...(input.goal ? [`Persistent thread goal: ${input.goal}`] : []),
+    "",
+    "Recent conversation history:",
+    transcript || "No text history is available.",
+    "",
+    "Use the history as context. Inspect the current project files before changing anything.",
+    "",
+    "Task:",
+    task,
+  ].join("\n");
 }
 const SCRIPT_TERMINAL_COLS = 120;
 const SCRIPT_TERMINAL_ROWS = 30;
@@ -7633,6 +7669,56 @@ export default function ChatView(props: ChatViewProps) {
       composerReviewComments.length === 0
         ? parseStandaloneComposerSlashCommand(trimmed)
         : null;
+    const standaloneGoalCommand =
+      !queuedMessage &&
+      !directAnnotation &&
+      composerImages.length === 0 &&
+      composerFiles.length === 0 &&
+      sendableComposerTerminalContexts.length === 0 &&
+      composerPreviewAnnotations.length === 0 &&
+      composerReviewComments.length === 0
+        ? parseStandaloneComposerGoalCommand(trimmed)
+        : null;
+    if (standaloneGoalCommand) {
+      if (!isServerThread || !activeThread) {
+        toastManager.add({
+          type: "warning",
+          title: "Start the thread before setting a goal",
+          description: "Send a message first, then use /goal to set a persistent goal.",
+        });
+        return;
+      }
+      if (standaloneGoalCommand.kind === "show") {
+        toastManager.add({
+          type: "info",
+          title: activeThread.goal ? "Thread goal" : "No thread goal",
+          description:
+            activeThread.goal ?? "Use /goal followed by the desired outcome, or /goal clear.",
+        });
+      } else {
+        const goal = standaloneGoalCommand.kind === "clear" ? null : standaloneGoalCommand.goal;
+        const result = await updateThreadMetadata({
+          environmentId,
+          input: { threadId: activeThread.id, goal },
+        });
+        if (result._tag === "Failure") {
+          toastManager.add({
+            type: "error",
+            title: "Could not update thread goal",
+            description: "The goal was not saved. Try again when the server is connected.",
+          });
+          return;
+        }
+        toastManager.add({
+          type: "success",
+          title: goal ? "Thread goal saved" : "Thread goal cleared",
+        });
+      }
+      promptRef.current = "";
+      clearComposerDraftContent(composerDraftTarget);
+      composerRef.current?.resetCursorState();
+      return;
+    }
     if (standaloneSlashCommand && !queuedMessage && multipleModelSelections === null) {
       handleInteractionModeChange(standaloneSlashCommand);
       promptRef.current = "";
@@ -9309,6 +9395,164 @@ export default function ChatView(props: ChatViewProps) {
     composerRef,
   ]);
 
+  const onStartThreadWorkflow = useCallback(
+    async (input: {
+      mode: ThreadWorkflowMode;
+      task: string;
+      modelSelection: ModelSelection;
+    }) => {
+      if (
+        !activeThread ||
+        !activeProject ||
+        !isServerThread ||
+        isSendBusy ||
+        isConnecting ||
+        activeEnvironmentUnavailable ||
+        sendInFlightRef.current
+      ) {
+        return false;
+      }
+
+      const createdAt = new Date().toISOString();
+      const nextThreadId = newThreadId();
+      const nextThreadTitle = truncate(
+        `${input.mode === "handoff" ? "Handoff" : "Fork"}: ${activeThread.title}`,
+      );
+      const workflowPrompt = buildThreadWorkflowPrompt({
+        mode: input.mode,
+        sourceTitle: activeThread.title,
+        goal: activeThread.goal,
+        messages: activeThread.messages,
+        task: input.task,
+      });
+
+      sendInFlightRef.current = true;
+      beginLocalDispatch({ preparingWorktree: false });
+      const finish = () => {
+        sendInFlightRef.current = false;
+        resetLocalDispatch();
+      };
+
+      const createResult = await createThread({
+        environmentId,
+        input: {
+          threadId: nextThreadId,
+          projectId: activeProject.id,
+          title: nextThreadTitle,
+          modelSelection: input.modelSelection,
+          runtimeMode,
+          interactionMode,
+          branch: activeThreadBranch,
+          worktreePath: activeThread.worktreePath,
+          createdAt,
+        },
+      });
+      let failure: AtomCommandResult<unknown, unknown> | null =
+        createResult._tag === "Failure" ? createResult : null;
+
+      if (failure === null && activeThread.goal) {
+        const goalResult = await updateThreadMetadata({
+          environmentId,
+          input: { threadId: nextThreadId, goal: activeThread.goal },
+        });
+        failure = goalResult._tag === "Failure" ? goalResult : null;
+      }
+
+      if (failure === null) {
+        const startResult = await startThreadTurn({
+          environmentId,
+          input: {
+            threadId: nextThreadId,
+            message: {
+              messageId: newMessageId(),
+              role: "user",
+              text: workflowPrompt,
+              attachments: [],
+            },
+            modelSelection: input.modelSelection,
+            titleSeed: nextThreadTitle,
+            runtimeMode,
+            interactionMode,
+            createdAt,
+          },
+        });
+        failure = startResult._tag === "Failure" ? startResult : null;
+      }
+
+      if (failure === null) {
+        const startedResult = await settlePromise(() =>
+          waitForStartedServerThread(scopeThreadRef(activeThread.environmentId, nextThreadId)),
+        );
+        failure = startedResult._tag === "Failure" ? startedResult : null;
+      }
+
+      if (failure === null) {
+        const navigateResult = await settlePromise(() =>
+          navigate({
+            to: "/$environmentId/$threadId",
+            params: {
+              environmentId: activeThread.environmentId,
+              threadId: nextThreadId,
+            },
+          }),
+        );
+        failure = navigateResult._tag === "Failure" ? navigateResult : null;
+      }
+
+      if (failure !== null) {
+        if (createResult._tag !== "Failure") {
+          const cleanupResult = await deleteThread({
+            environmentId,
+            input: { threadId: nextThreadId },
+          });
+          if (cleanupResult._tag === "Failure" && !isAtomCommandInterrupted(cleanupResult)) {
+            console.warn(
+              "Failed to clean up thread workflow after start failure.",
+              squashAtomCommandFailure(cleanupResult),
+            );
+          }
+        }
+        if (!isAtomCommandInterrupted(failure)) {
+          const error = squashAtomCommandFailure(failure);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: input.mode === "handoff" ? "Could not start handoff" : "Could not fork thread",
+              description:
+                error instanceof Error
+                  ? error.message
+                  : "An error occurred while creating the new thread.",
+            }),
+          );
+        }
+        finish();
+        return false;
+      }
+
+      finish();
+      return true;
+    },
+    [
+      activeEnvironmentUnavailable,
+      activeProject,
+      activeThread,
+      activeThreadBranch,
+      beginLocalDispatch,
+      createThread,
+      deleteThread,
+      environmentId,
+      interactionMode,
+      isConnecting,
+      isSendBusy,
+      isServerThread,
+      navigate,
+      resetLocalDispatch,
+      runtimeMode,
+      startThreadTurn,
+      updateThreadMetadata,
+    ],
+  );
+
   const getModelDisabledReason = useCallback(
     (instanceId: ProviderInstanceId, model: string): string | null => {
       if (!activeThread) {
@@ -9675,6 +9919,13 @@ export default function ChatView(props: ChatViewProps) {
           mode="embedded"
           composerDraftTarget={composerDraftTarget}
           workspaceMutationId={workspaceMutationId}
+          onWalkthrough={() => {
+            const inserted = composerRef.current?.insertTextAtEnd(
+              "Walk me through the diff currently shown in the Changes panel. Start with a short overview, then explain each changed file in order, including why the change matters and any behavior or risk to check. Pause after each file so I can ask questions. Do not edit files.",
+              { ensureLeadingBoundary: true },
+            );
+            if (inserted) composerRef.current?.focusAtEnd();
+          }}
         />
       </Suspense>
     ) : renderedRightPanelSurface?.kind === "pull-request" && !pullRequestsCapabilityKnown ? (
@@ -10196,6 +10447,7 @@ export default function ChatView(props: ChatViewProps) {
                             onSend={onSend}
                             onInterrupt={onInterrupt}
                             onImplementPlanInNewThread={onImplementPlanInNewThread}
+                            onStartThreadWorkflow={onStartThreadWorkflow}
                             onRespondToApproval={onRespondToApproval}
                             onSelectActivePendingUserInputOption={
                               onSelectActivePendingUserInputOption

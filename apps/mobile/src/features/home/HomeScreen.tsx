@@ -42,6 +42,7 @@ import {
   ThreadListV2ShowMoreRow,
   ThreadListV2SnoozedShelfHeader,
 } from "../threads/thread-list-v2-items";
+import { SettledProjectList } from "../threads/SettledProjectList";
 import { useThreadRowProviderInstanceResolver } from "../threads/thread-provider-instance";
 import {
   buildThreadListV2Items,
@@ -56,6 +57,7 @@ import { useThreadListV2ShelfPreferences } from "../threads/use-thread-list-v2-s
 import type { HomeListFilterMenuEnvironment } from "./home-list-filter-menu";
 import {
   buildHomeProjectScopes,
+  filterHomeProjectsWithoutOpenThreads,
   sortHomeProjectScopes,
   type HomeProjectSortOrder,
 } from "./homeThreadList";
@@ -459,6 +461,30 @@ export function HomeScreen(props: HomeScreenProps) {
     }
     return supported;
   }, [serverConfigs]);
+  const settledProjectScopes = useMemo(
+    () =>
+      filterHomeProjectsWithoutOpenThreads({
+        scopes: v2ScopeProjects,
+        threads: props.threads,
+        settlementEnvironmentIds,
+        snoozeEnvironmentIds,
+        queuedThreadKeys,
+        now: new Date().toISOString(),
+        selectedProjectKey: v2ProjectScopeKey,
+        searchQuery: props.searchQuery,
+      }),
+    [
+      nowMinute,
+      props.searchQuery,
+      props.threads,
+      queuedThreadKeys,
+      settlementEnvironmentIds,
+      snoozeEnvironmentIds,
+      snoozeWakeTick,
+      v2ProjectScopeKey,
+      v2ScopeProjects,
+    ],
+  );
   const pinningEnvironmentIds = useMemo(() => {
     const supported = new Set<EnvironmentId>();
     for (const [environmentId, config] of serverConfigs) {
@@ -926,8 +952,20 @@ export function HomeScreen(props: HomeScreenProps) {
         variant={Platform.OS === "android" ? "plain" : undefined}
       />
     );
+  const settledProjectSection = (
+    <SettledProjectList
+      projects={settledProjectScopes}
+      onOpenProject={props.onNewThreadInProject}
+    />
+  );
+  const v2ListEmptyComponent =
+    settledProjectScopes.length > 0 ? settledProjectSection : v2ListEmpty;
 
-  if (Platform.OS === "android" && threadListV2Items.length === 0) {
+  if (
+    Platform.OS === "android" &&
+    threadListV2Items.length === 0 &&
+    settledProjectScopes.length === 0
+  ) {
     return (
       <View className="flex-1 bg-header">
         <View
@@ -965,14 +1003,19 @@ export function HomeScreen(props: HomeScreenProps) {
             extraData={v2ExtraData}
             ListHeaderComponent={v2ListHeader}
             ListFooterComponent={
-              settledShelfExpanded && threadListV2Layout.hiddenSettledCount > 0 ? (
-                <ThreadListV2ShowMoreRow
-                  hiddenCount={threadListV2Layout.hiddenSettledCount}
-                  onPress={showMoreSettled}
-                />
+              threadListV2Items.length > 0 ? (
+                <>
+                  {settledShelfExpanded && threadListV2Layout.hiddenSettledCount > 0 ? (
+                    <ThreadListV2ShowMoreRow
+                      hiddenCount={threadListV2Layout.hiddenSettledCount}
+                      onPress={showMoreSettled}
+                    />
+                  ) : null}
+                  {settledProjectSection}
+                </>
               ) : null
             }
-            ListEmptyComponent={v2ListEmpty}
+            ListEmptyComponent={v2ListEmptyComponent}
             style={{ flex: 1 }}
             automaticallyAdjustsScrollIndicatorInsets={Platform.OS === "ios"}
             contentInsetAdjustmentBehavior={Platform.OS === "ios" ? "automatic" : "never"}

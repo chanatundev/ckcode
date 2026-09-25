@@ -10,7 +10,14 @@ import {
 } from "./composer-editor-mentions";
 
 export type ComposerTriggerKind = "path" | "pull-request" | "slash-command" | "skill";
-export type ComposerSlashCommand = "model" | "plan" | "default";
+export type ComposerSlashCommand =
+  | "model"
+  | "plan"
+  | "default"
+  | "pipeline"
+  | "goal"
+  | "handoff"
+  | "fork";
 export type ComposerSubmissionIntent = "foreground" | "background" | "alternate";
 
 export interface ComposerTrigger {
@@ -235,6 +242,17 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
 
   const tokenStart = tokenStartForCursor(text, cursor);
   const token = text.slice(tokenStart, cursor);
+  // Skills can be selected anywhere in a draft. Provider slash commands keep
+  // their existing whole-message behavior; this token is only a search entry
+  // point and selection writes the provider-neutral `$name` mention.
+  if (token.startsWith("/")) {
+    return {
+      kind: "slash-command",
+      query: token.slice(1),
+      rangeStart: tokenStart,
+      rangeEnd: cursor,
+    };
+  }
   const pullRequestMatch = /^#([\p{L}\p{N}][\p{L}\p{N}_-]*)?$/u.exec(token);
   if (pullRequestMatch) {
     return {
@@ -287,6 +305,22 @@ export function parseStandaloneComposerSlashCommand(
   const command = match[1]?.toLowerCase();
   if (command === "plan") return "plan";
   return "default";
+}
+
+export type StandaloneComposerGoalCommand =
+  | { readonly kind: "show" }
+  | { readonly kind: "clear" }
+  | { readonly kind: "set"; readonly goal: string };
+
+export function parseStandaloneComposerGoalCommand(
+  text: string,
+): StandaloneComposerGoalCommand | null {
+  const match = /^\/goal(?:\s+([\s\S]*?))?\s*$/i.exec(text.trim());
+  if (!match) return null;
+  const goal = match[1]?.trim();
+  if (!goal) return { kind: "show" };
+  if (goal.toLowerCase() === "clear") return { kind: "clear" };
+  return { kind: "set", goal };
 }
 
 export function replaceTextRange(

@@ -4,15 +4,16 @@ import { useAtomValue } from "@effect/atom-react";
 import { clampFileAttachmentUploadBytes } from "@t3tools/client-runtime/state/attachments";
 import { pastedTextDisposition, replaceTextSelection } from "@t3tools/client-runtime/text-paste";
 import {
+  MessageId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   type EnvironmentId,
-  type MessageId,
   type ModelSelection,
   type OrchestrationThreadShell,
   type ProviderInteractionMode,
   type RuntimeMode,
   type ServerConfig as T3ServerConfig,
+  ThreadId,
   type UsageLimitsReport,
 } from "@t3tools/contracts";
 import {
@@ -59,6 +60,9 @@ import {
 import type { ComposerDocumentAttachment } from "../../lib/composerContext";
 import { useProject } from "../../state/entities";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { threadEnvironment } from "../../state/threads";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { uuidv4 } from "../../lib/uuid";
 
 import { AppText as Text } from "../../components/AppText";
 import { ComposerAttachmentButton } from "../../components/ComposerAttachmentButton";
@@ -131,6 +135,10 @@ export interface ThreadComposerProps {
   readonly connectionState: RemoteClientConnectionState;
   readonly environmentLabel: string | null;
   readonly selectedThread: OrchestrationThreadShell;
+  readonly workflowHistory: ReadonlyArray<{
+    readonly role: "user" | "assistant";
+    readonly text: string;
+  }>;
   readonly hasCompactableConversation: boolean;
   readonly serverConfig: T3ServerConfig | null;
   readonly queueCount: number;
@@ -147,6 +155,7 @@ export interface ThreadComposerProps {
   readonly onRemoveDraftImage: (imageId: string) => void;
   readonly onStopThread: () => void;
   readonly onSendMessage: () => Promise<MessageId | null>;
+  readonly onUpdateThreadGoal: (goal: string | null) => Promise<boolean>;
   /** `/usage-limits` resolves locally; the host decides where the report shows. Null clears it. */
   readonly onShowUsageLimits: (report: UsageLimitsReport | null) => void;
   readonly onUpdateModelSelection: (modelSelection: ModelSelection) => void;
@@ -287,6 +296,12 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const settingsRoutePresentedRef = useRef(false);
   const wasExpandedBeforePreviewRef = useRef(false);
   const inFlightThreadIdsRef = useRef(new Set<string>());
+  const createThread = useAtomCommand(threadEnvironment.create, { reportFailure: false });
+  const startThreadTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
+  const deleteThread = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
+  const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
+    reportFailure: false,
+  });
   const { onExpandedChange } = props;
 
   const [previewFile, setPreviewFile] = useState<FilePreviewSource | null>(null);
@@ -330,6 +345,11 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       ) ?? null
     );
   }, [props.serverConfig, props.selectedThread.modelSelection.instanceId]);
+  const modelOptions = useMemo(
+    () => buildModelOptions(props.serverConfig, currentModelSelection),
+    [props.serverConfig, currentModelSelection],
+  );
+  const providerGroups = useMemo(() => groupByProvider(modelOptions), [modelOptions]);
   const composerOwnerKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
   const openDraftDocument = (attachment: ComposerDocumentAttachment) => {
     Keyboard.dismiss();
@@ -472,6 +492,175 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     }
     onEditorFocusChange?.(false);
   }, [onEditorFocusChange, onExpandedChange, settingsSheetPresentation.keepsComposerExpanded]);
+  const startThreadWorkflow = useCallback(
+    async (input: { readonly mode: "handoff" | "fork"; readonly task: string }) => {
+      if (props.connectionState !== "connected") {
+        Alert.alert("Connect to start a thread", "Reconnect to this server, then try again.");
+        return false;
+      }
+      if (!project) {
+        Alert.alert("Project unavailable", "The project for this thread is not available.");
+        return false;
+      }
+      if (inFlightThreadIdsRef.current.has(composerOwnerKey)) return false;
+      inFlightThreadIdsRef.current.add(composerOwnerKey);
+
+      try {
+        let modelSelection = currentModelSelection;
+        if (input.mode === "handoff") {
+          const alternatives = modelOptions.filter(
+            (option) =>
+              !option.isUnavailable &&
+              option.providerDriver !== selectedProviderStatus?.driver,
+          );
+          const target =
+            alternatives.find((option) => option.isDefault) ?? alternatives[0] ?? null;
+          if (!target) {
+            Alert.alert(
+              "No other provider is ready",
+              "Configure another provider in Settings before handing off this thread.",
+            );
+            return false;
+          }
+          modelSelection = target.selection;
+        } else if (modelUnavailable) {
+          Alert.alert(
+            "Current model unavailable",
+            "Choose a ready model before creating a fork.",
+          );
+          return false;
+        }
+
+        const target =
+          modelOptions.find(
+            (option) =>
+              option.selection.instanceId === modelSelection.instanceId &&
+              option.selection.model === modelSelection.model,
+          ) ?? null;
+        const workflowName = input.mode === "handoff" ? "handoff" : "fork";
+        const confirmed = await new Promise<boolean>((resolve) => {
+          Alert.alert(
+            input.mode === "handoff" ? "Hand off this thread?" : "Fork this thread?",
+            `Start a new thread with ${target?.providerLabel ?? modelSelection.instanceId} · ${target?.label ?? modelSelection.model}. Recent text history and the thread goal will carry over. Attachments are not copied.`,
+            [
+              { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+              { text: "Start", onPress: () => resolve(true) },
+            ],
+            { cancelable: true, onDismiss: () => resolve(false) },
+          );
+        });
+        if (!confirmed) return false;
+
+        const transcript = props.workflowHistory
+          .slice(-16)
+          .map((message) => `${message.role === "user" ? "User" : "Assistant"}: ${message.text.slice(0, 1_500)}`)
+          .join("\n\n")
+          .slice(-10_000);
+        const workflowPrompt = [
+          `Continue work from the ${workflowName} of the T3 Code thread: ${props.selectedThread.title}`,
+          "",
+          "Recent conversation history:",
+          transcript || "No text history is available.",
+          "",
+          ...(props.selectedThread.goal ? [`Persistent thread goal: ${props.selectedThread.goal}`, ""] : []),
+          "Use the history as context. Inspect the current project files before changing anything.",
+          "",
+          "Task:",
+          input.task.trim() || "Continue the current work from the history above.",
+        ].join("\n");
+        const createdAt = new Date().toISOString();
+        const threadId = ThreadId.make(uuidv4());
+        const title = `${input.mode === "handoff" ? "Handoff" : "Fork"}: ${props.selectedThread.title}`.slice(
+          0,
+          160,
+        );
+        const createResult = await createThread({
+          environmentId: props.environmentId,
+          input: {
+            threadId,
+            projectId: project.id,
+            title,
+            modelSelection,
+            runtimeMode: props.selectedThread.runtimeMode,
+            interactionMode: props.selectedThread.interactionMode,
+            branch: props.selectedThread.branch,
+            worktreePath: props.selectedThread.worktreePath,
+            createdAt,
+          },
+        });
+        if (createResult._tag === "Failure") {
+          Alert.alert("Could not start thread", "The server rejected the new thread.");
+          return false;
+        }
+        if (props.selectedThread.goal) {
+          const goalResult = await updateThreadMetadata({
+            environmentId: props.environmentId,
+            input: { threadId, goal: props.selectedThread.goal },
+          });
+          if (goalResult._tag === "Failure") {
+            await deleteThread({ environmentId: props.environmentId, input: { threadId } });
+            Alert.alert("Could not carry over thread goal", "The new thread was removed.");
+            return false;
+          }
+        }
+
+        const startResult = await startThreadTurn({
+          environmentId: props.environmentId,
+          input: {
+            threadId,
+            message: {
+              messageId: MessageId.make(uuidv4()),
+              role: "user",
+              text: workflowPrompt,
+              attachments: [],
+            },
+            modelSelection,
+            titleSeed: title,
+            runtimeMode: props.selectedThread.runtimeMode,
+            interactionMode: props.selectedThread.interactionMode,
+            createdAt,
+          },
+        });
+        if (startResult._tag === "Failure") {
+          await deleteThread({ environmentId: props.environmentId, input: { threadId } });
+          Alert.alert("Could not start thread", "The server rejected the first message.");
+          return false;
+        }
+        navigation.dispatch(
+          StackActions.replace("Thread", {
+            environmentId: String(props.environmentId),
+            threadId: String(threadId),
+          }),
+        );
+        return true;
+      } catch (error) {
+        Alert.alert(
+          "Could not start thread",
+          error instanceof Error ? error.message : "An unexpected error occurred.",
+        );
+        return false;
+      } finally {
+        inFlightThreadIdsRef.current.delete(composerOwnerKey);
+      }
+    },
+    [
+      composerOwnerKey,
+      createThread,
+      currentModelSelection,
+      deleteThread,
+      modelOptions,
+      modelUnavailable,
+      navigation,
+      project,
+      props.connectionState,
+      props.environmentId,
+      props.selectedThread,
+      props.workflowHistory,
+      selectedProviderStatus?.driver,
+      startThreadTurn,
+      updateThreadMetadata,
+    ],
+  );
   const handleSend = useCallback(async () => {
     if (voiceInput.blocksSubmission || pendingPastedTextAttachmentCountRef.current > 0) return;
     // Typed out in full rather than picked from the menu. Attachments mean the
@@ -482,6 +671,39 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       props.draftAttachments.length === 0
     ) {
       if (openUsageLimits()) onChangeDraftMessage("");
+      return;
+    }
+    const goalCommand = /^\s*\/goal(?:\s+([\s\S]*?))?\s*$/i.exec(props.draftMessage);
+    if (goalCommand && props.draftAttachments.length === 0) {
+      const requestedGoal = goalCommand[1]?.trim();
+      if (!requestedGoal) {
+        const currentGoal = props.selectedThread.goal?.trim();
+        Alert.alert(
+          currentGoal ? "Thread goal" : "No thread goal",
+          currentGoal ?? "Use /goal followed by the desired outcome, or /goal clear to remove it.",
+        );
+      } else if (requestedGoal.toLowerCase() === "clear") {
+        if (await props.onUpdateThreadGoal(null)) props.onChangeDraftMessage("");
+      } else {
+        if (await props.onUpdateThreadGoal(requestedGoal)) props.onChangeDraftMessage("");
+      }
+      return;
+    }
+    const workflowCommand = /(?:^|\s)\/(handoff|fork)(?=\s|$)/i.exec(props.draftMessage);
+    if (workflowCommand) {
+      if (props.draftAttachments.length > 0) {
+        Alert.alert(
+          "Attachments stay in this thread",
+          "Remove attachments before starting a handoff or fork. They are not copied to the new thread.",
+        );
+        return;
+      }
+      const task = props.draftMessage.replace(workflowCommand[0], "").trim();
+      const started = await startThreadWorkflow({
+        mode: workflowCommand[1]?.toLowerCase() === "handoff" ? "handoff" : "fork",
+        task,
+      });
+      if (started) props.onChangeDraftMessage("");
       return;
     }
     const threadKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
@@ -507,6 +729,11 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   }, [
     props.draftMessage,
     props.draftAttachments.length,
+    props.draftMessage,
+    props.selectedThread.goal,
+    props.onUpdateThreadGoal,
+    props.draftAttachments.length,
+    startThreadWorkflow,
     onChangeDraftMessage,
     openUsageLimits,
     usageLimitsOffered,
@@ -519,11 +746,6 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   ]);
 
   // ── Model menu ───────────────────────────────────────────
-  const modelOptions = useMemo(
-    () => buildModelOptions(props.serverConfig, currentModelSelection),
-    [props.serverConfig, currentModelSelection],
-  );
-  const providerGroups = useMemo(() => groupByProvider(modelOptions), [modelOptions]);
   // An existing thread is bound to its harness: sessions can't move between
   // provider instances, so the picker only offers the thread's own group.
   const threadProviderGroups = useMemo(

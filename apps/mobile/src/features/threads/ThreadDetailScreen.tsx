@@ -75,7 +75,9 @@ import { CHAT_CONTENT_MAX_WIDTH, type LayoutVariant } from "../../lib/layout";
 import { IOS_NAV_BAR_HEIGHT } from "../../lib/layoutMetrics";
 import { editPendingThreadMessage } from "../../state/edit-pending-thread-message";
 import { deviceEnvironment } from "../../state/device";
+import { threadEnvironment } from "../../state/threads";
 import { useEnvironmentQuery } from "../../state/query";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { threadDevicePreviews } from "../devices/threadDevicePreviews";
 import type { QueuedThreadMessage } from "../../state/thread-outbox-model";
 import { scopedThreadKey } from "../../lib/scopedEntities";
@@ -266,12 +268,42 @@ const USER_INPUT_TOGGLE_TIMING = {
 
 export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: ThreadDetailScreenProps) {
   const navigation = useNavigation();
+  const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
+    reportFailure: false,
+  });
+  const updateThreadGoal = useCallback(
+    async (goal: string | null) => {
+      const result = await updateThreadMetadata({
+        environmentId: props.environmentId,
+        input: { threadId: props.selectedThread.id, goal },
+      });
+      if (result._tag === "Failure") {
+        Alert.alert(
+          "Could not update thread goal",
+          "The goal could not be saved. Try again when the server is connected.",
+        );
+        return false;
+      }
+      return true;
+    },
+    [props.environmentId, props.selectedThread.id, updateThreadMetadata],
+  );
   const deviceState = useEnvironmentQuery(
     deviceEnvironment.state({ environmentId: props.environmentId, input: {} }),
   );
   const devicePreviews = useMemo(
     () => threadDevicePreviews(deviceState.data, props.selectedThread.id),
     [deviceState.data, props.selectedThread.id],
+  );
+  const workflowHistory = useMemo(
+    () =>
+      props.selectedThreadFeed.flatMap((entry) => {
+        if (entry.type !== "message") return [];
+        const message = entry.message;
+        if (message.role !== "user" && message.role !== "assistant") return [];
+        return [{ role: message.role, text: message.text }];
+      }),
+    [props.selectedThreadFeed],
   );
   const openDevicePreview = useCallback(() => {
     Keyboard.dismiss();
@@ -1078,6 +1110,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                   connectionState={props.connectionStateLabel}
                   environmentLabel={props.environmentLabel}
                   selectedThread={props.selectedThread}
+                  workflowHistory={workflowHistory}
                   hasCompactableConversation={hasCompactableConversation && !props.isCompacting}
                   serverConfig={props.serverConfig}
                   queueCount={props.selectedThreadQueueCount}
@@ -1098,6 +1131,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                   onRemoveDraftImage={props.onRemoveDraftImage}
                   onStopThread={props.onStopThread}
                   onSendMessage={handleSendMessage}
+                  onUpdateThreadGoal={updateThreadGoal}
                   onShowUsageLimits={showUsageLimits}
                   onUpdateModelSelection={props.onUpdateThreadModelSelection}
                   onUpdateRuntimeMode={props.onUpdateThreadRuntimeMode}

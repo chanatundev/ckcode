@@ -87,9 +87,37 @@ export function buildComposerSlashCommandItems(input: {
       label: "/default",
       description: "Switch to default mode",
     },
+    {
+      id: "cmd:goal",
+      type: "slash-command",
+      command: "goal",
+      label: "/goal",
+      description: "View, set, or clear this thread's persistent goal",
+    },
+    ...(input.hasThread
+      ? ([
+          {
+            id: "cmd:handoff",
+            type: "slash-command",
+            command: "handoff",
+            label: "/handoff",
+            description: "Continue this thread with another provider",
+          },
+          {
+            id: "cmd:fork",
+            type: "slash-command",
+            command: "fork",
+            label: "/fork",
+            description: "Continue this conversation in a new thread",
+          },
+        ] as const)
+      : []),
   ] satisfies ComposerCommandItem[];
   const items: ComposerCommandItem[] = builtIn.filter(
-    (item) => item.command.includes(query) && (item.command === "model" || allowInteractionMode),
+    (item) =>
+      item.command.includes(query) &&
+      (!(["plan", "default"] as const).includes(item.command as "plan" | "default") ||
+        allowInteractionMode),
   );
 
   // Providers expand commands only at the start of a message. T3 commands
@@ -356,7 +384,7 @@ export function useComposerCommandMenu({
           id: `skill:${skill.name}`,
           type: "skill" as const,
           skill,
-          label: `skill:${skill.name}`,
+          label: `/${skill.name}`,
           description: skill.shortDescription ?? skill.description ?? "",
         }));
 

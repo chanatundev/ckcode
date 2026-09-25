@@ -1,4 +1,5 @@
 import { buildProjectGroups } from "@t3tools/client-runtime/state/project-grouping";
+import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
 import type {
   EnvironmentProject,
   EnvironmentThreadShell,
@@ -123,4 +124,49 @@ export function sortHomeProjectScopes(input: {
       }),
     ),
   );
+}
+
+/** Projects whose live chats are all settled, including projects with no
+    chat history yet. Queued messages and snoozed threads still count as open
+    work, matching the thread list's active/snoozed classification. */
+export function filterHomeProjectsWithoutOpenThreads(input: {
+  readonly scopes: ReadonlyArray<HomeProjectScope>;
+  readonly threads: ReadonlyArray<EnvironmentThreadShell>;
+  readonly settlementEnvironmentIds: ReadonlySet<EnvironmentId>;
+  readonly snoozeEnvironmentIds: ReadonlySet<EnvironmentId>;
+  readonly queuedThreadKeys: ReadonlySet<string>;
+  readonly now: string;
+  readonly selectedProjectKey: string | null;
+  readonly searchQuery: string;
+}): ReadonlyArray<HomeProjectScope> {
+  const projectsWithOpenThreads = new Set<string>();
+  for (const thread of input.threads) {
+    if (thread.archivedAt !== null) continue;
+
+    const threadKey = `${thread.environmentId}:${thread.id}`;
+    const settled =
+      input.settlementEnvironmentIds.has(thread.environmentId) &&
+      thread.settledOverride === "settled" &&
+      !input.queuedThreadKeys.has(threadKey) &&
+      !(
+        input.snoozeEnvironmentIds.has(thread.environmentId) &&
+        effectiveSnoozed(thread, { now: input.now })
+      );
+    if (!settled) {
+      projectsWithOpenThreads.add(scopedProjectKey(thread.environmentId, thread.projectId));
+    }
+  }
+
+  const query = input.searchQuery.trim().toLocaleLowerCase();
+  return input.scopes.filter((scope) => {
+    if (input.selectedProjectKey !== null && scope.key !== input.selectedProjectKey) return false;
+    if (
+      scope.projectRefs.some((projectRef) =>
+        projectsWithOpenThreads.has(scopedProjectKey(projectRef.environmentId, projectRef.projectId)),
+      )
+    ) {
+      return false;
+    }
+    return query.length === 0 || scope.title.toLocaleLowerCase().includes(query);
+  });
 }

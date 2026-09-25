@@ -396,6 +396,16 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                       onValueChange={(value) => write({ enableAgentBrowserAccess: value })}
                     />
                   </SettingsSection>
+                  <SettingsSection title="Computer use">
+                    <FanoutSwitchRow
+                      icon="desktopcomputer"
+                      label="Agent computer access"
+                      subtitle="Allow agents to inspect and control desktop apps through MCP."
+                      value={uniform("enableAgentComputerAccess")}
+                      disabled={projectSelected || disabledFor("enableAgentComputerAccess")}
+                      onValueChange={(value) => write({ enableAgentComputerAccess: value })}
+                    />
+                  </SettingsSection>
                 </>
               ) : null}
 
