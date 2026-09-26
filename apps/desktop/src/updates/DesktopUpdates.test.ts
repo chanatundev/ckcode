@@ -205,6 +205,28 @@ describe("DesktopUpdates", () => {
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
+  it.effect("ignores an older nightly release than the installed nightly", () => {
+    const harness = makeHarness({ appVersion: "1.2.4-nightly.20260925.1700" });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        yield* updates.setChannel("nightly");
+
+        harness.emit("update-available", {
+          version: "1.2.4-nightly.20260925.1600",
+        });
+        yield* flushCallbacks;
+
+        const state = yield* updates.getState;
+        assert.equal(state.status, "idle");
+        assert.equal(state.availableVersion, null);
+        assert.equal(state.downloadedVersion, null);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
   it.effect("checks for newer releases after an update has been downloaded", () => {
     const harness = makeHarness();
 
