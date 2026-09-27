@@ -584,6 +584,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["allow simulator emulator ios android drive tools sessions"],
   },
   {
+    id: "agent-computer-access",
+    title: "Agent computer access",
+    to: "/settings/integrations",
+    targetId: "computer-use",
+    searchTerms: ["computer use desktop apps control mcp"],
+  },
+  {
     id: "device-hub",
     title: "Device hub",
     to: "/settings/integrations",
