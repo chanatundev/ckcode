@@ -13,6 +13,11 @@ export function isNightlyDesktopVersion(version: string): boolean {
   return PRERELEASE_VERSION_PATTERN.test(version);
 }
 
+/** True for any semver prerelease (nightly, preview, rc, ...); the updater only installs stable releases. */
+export function isPrereleaseDesktopVersion(version: string): boolean {
+  return /^[^-+]+-/.test(version);
+}
+
 export function resolveDefaultDesktopUpdateChannel(appVersion: string): DesktopUpdateChannel {
   return NIGHTLY_VERSION_PATTERN.test(appVersion) ? "nightly" : "latest";
 }
