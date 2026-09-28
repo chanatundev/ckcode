@@ -1,8 +1,14 @@
-# T3 Code fork
+# CKcode
 
-This fork builds on [T3 Code](https://github.com/pingdotgg/t3code). Its `main` branch is based on an older upstream snapshot, so it does not include every recent upstream change. This README covers only the fork-specific additions; see the [upstream README](https://github.com/pingdotgg/t3code#readme) for shared setup and documentation.
+**CKcode is a fork of [T3 Code](https://github.com/pingdotgg/t3code).** Credit and thanks go to the [T3 Code contributors](https://github.com/pingdotgg/t3code/graphs/contributors) for creating and maintaining the original project.
+
+This fork's `main` branch is based on an older upstream snapshot, so it does not include every recent upstream change. This README covers only the fork-specific additions; see the [upstream README](https://github.com/pingdotgg/t3code#readme) for shared setup and documentation.
 
 ## Fork-specific additions
+
+### Desktop branding
+
+- The desktop app uses the CKcode name and icon in its UI and installers.
 
 ### Thread workflows
 
