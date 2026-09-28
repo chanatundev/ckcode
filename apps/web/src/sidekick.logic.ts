@@ -1,18 +1,14 @@
-import type { EnvironmentId, OrchestrationThreadShell, ScopedThreadRef } from "@t3tools/contracts";
+import type {
+  DesktopSidekickState,
+  EnvironmentId,
+  OrchestrationThreadShell,
+  ScopedThreadRef,
+} from "@t3tools/contracts";
 
 import { hasUnseenCompletion, resolveSidebarThreadStatus } from "./components/Sidebar.logic";
 import { isLatestTurnSettled } from "./session-logic";
 
-export type SidekickState =
-  | "approval"
-  | "input"
-  | "error"
-  | "plan"
-  | "working"
-  | "success"
-  | "waiting"
-  | "sleeping"
-  | "offline";
+export type SidekickState = DesktopSidekickState;
 
 /** Idle this long with nothing running and the sidekick falls asleep. */
 export const SIDEKICK_SLEEP_AFTER_MS = 30 * 60 * 1000;
