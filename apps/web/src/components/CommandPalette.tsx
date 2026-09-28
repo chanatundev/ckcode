@@ -42,6 +42,7 @@ import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import {
   ArrowLeftIcon,
+  BotIcon,
   ChartNoAxesColumnIcon,
   CornerLeftUpIcon,
   FileSearchIcon,
@@ -99,6 +100,7 @@ import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments"
 import { useProjects, useServerConfigs, useThreadShells, waitForProject } from "../state/entities";
 import { useThreadSearch } from "../state/queries";
 import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
+import { isDesktopSidekickAvailable, toggleDesktopSidekick } from "../lib/desktopSidekick";
 import {
   appendBrowsePathSegment,
   ensureBrowseDirectoryPath,
@@ -2038,6 +2040,19 @@ function OpenCommandPaletteDialog(props: {
       await navigate({ to: "/usage" });
     },
   });
+
+  if (isDesktopSidekickAvailable()) {
+    actionItems.push({
+      kind: "action",
+      value: "action:toggle-sidekick",
+      searchTerms: ["sidekick", "pet", "buddy", "companion", "show", "hide", "toggle"],
+      title: "Toggle sidekick",
+      icon: <BotIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        await toggleDesktopSidekick();
+      },
+    });
+  }
 
   actionItems.push({
     kind: "action",

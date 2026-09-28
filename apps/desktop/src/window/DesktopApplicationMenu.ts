@@ -11,6 +11,7 @@ import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronMenu from "../electron/ElectronMenu.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import * as DesktopSidekick from "../sidekick/DesktopSidekick.ts";
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
 import * as DesktopWindow from "./DesktopWindow.ts";
 
@@ -34,6 +35,7 @@ export class DesktopApplicationMenu extends Context.Service<
 >()("@t3tools/desktop/window/DesktopApplicationMenu") {}
 
 type DesktopApplicationMenuRuntimeServices =
+  | DesktopSidekick.DesktopSidekick
   | DesktopUpdates.DesktopUpdates
   | DesktopWindow.DesktopWindow
   | ElectronDialog.ElectronDialog;
@@ -57,6 +59,12 @@ const zoomMainWindow = Effect.fn("desktop.menu.zoomMainWindow")(function* (
   const desktopWindow = yield* DesktopWindow.DesktopWindow;
   yield* desktopWindow.zoomMain(direction);
 });
+
+const toggleSidekick = Effect.gen(function* () {
+  const sidekick = yield* DesktopSidekick.DesktopSidekick;
+  const { enabled } = yield* sidekick.preferences;
+  yield* sidekick.setPreferences({ enabled: !enabled });
+}).pipe(Effect.withSpan("desktop.menu.toggleSidekick"));
 
 const checkForUpdatesFromMenu = Effect.gen(function* () {
   const updates = yield* DesktopUpdates.DesktopUpdates;
@@ -149,6 +157,9 @@ export const make = Effect.gen(function* () {
     ) => {
       if (event.triggeredByAccelerator === true) return;
       runMenuEffect("paste-as-text", dispatchMenuAction("paste-as-text"));
+    };
+    const toggleSidekickClick = () => {
+      runMenuEffect("toggle-sidekick", toggleSidekick);
     };
     const zoomClick = (direction: DesktopWindow.MainWindowZoomDirection) => () => {
       runMenuEffect(`zoom-${direction}`, zoomMainWindow(direction));
@@ -250,6 +261,7 @@ export const make = Effect.gen(function* () {
           },
           { label: "Zoom Out", accelerator: "CmdOrCtrl+-", click: zoomClick("out") },
           { type: "separator" },
+          { label: "Toggle Sidekick", click: toggleSidekickClick },
           { role: "togglefullscreen" },
         ],
       },

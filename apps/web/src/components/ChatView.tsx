@@ -125,6 +125,7 @@ import {
   type ComposerSubmissionIntent,
   parseStandaloneComposerSlashCommand,
   parseStandaloneComposerGoalCommand,
+  isStandaloneComposerSidekickCommand,
 } from "../composer-logic";
 import {
   createMessageAttachmentPreviewProjector,
@@ -178,6 +179,7 @@ import { useTheme } from "../hooks/useTheme";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { subscribeSnapShotComposerFocus } from "../lib/desktopSnapShot";
+import { isDesktopSidekickAvailable, toggleDesktopSidekick } from "../lib/desktopSidekick";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
@@ -7679,6 +7681,23 @@ export default function ChatView(props: ChatViewProps) {
       composerReviewComments.length === 0
         ? parseStandaloneComposerGoalCommand(trimmed)
         : null;
+    if (
+      !queuedMessage &&
+      !directAnnotation &&
+      composerImages.length === 0 &&
+      composerFiles.length === 0 &&
+      sendableComposerTerminalContexts.length === 0 &&
+      composerPreviewAnnotations.length === 0 &&
+      composerReviewComments.length === 0 &&
+      isDesktopSidekickAvailable() &&
+      isStandaloneComposerSidekickCommand(trimmed)
+    ) {
+      void toggleDesktopSidekick().catch(() => undefined);
+      promptRef.current = "";
+      clearComposerDraftContent(composerDraftTarget);
+      composerRef.current?.resetCursorState();
+      return;
+    }
     if (standaloneGoalCommand) {
       if (!isServerThread || !activeThread) {
         toastManager.add({

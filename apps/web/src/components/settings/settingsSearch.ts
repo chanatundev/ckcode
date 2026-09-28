@@ -305,6 +305,20 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["notification toast popup completion input approval failure"],
   },
   {
+    id: "sidekick",
+    title: "Sidekick",
+    to: "/settings/general",
+    searchTerms: ["pet buddy companion mascot floating character status approval working"],
+    desktopOnly: true,
+  },
+  {
+    id: "sidekick-size",
+    title: "Sidekick size",
+    to: "/settings/general",
+    searchTerms: ["pet buddy companion small medium large"],
+    desktopOnly: true,
+  },
+  {
     id: "time-format",
     title: "Time format",
     to: "/settings/general",

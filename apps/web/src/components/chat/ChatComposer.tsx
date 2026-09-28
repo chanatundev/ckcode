@@ -1,4 +1,5 @@
 import { DESKTOP_PASTE_AS_TEXT_EVENT } from "../../lib/desktopPasteAsText";
+import { isDesktopSidekickAvailable, toggleDesktopSidekick } from "../../lib/desktopSidekick";
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";
 import { usePrimaryEnvironmentId } from "../../state/environments";
 import { runtimeModeConfig, runtimeModeOptions } from "./runtimeModeConfig";
@@ -2393,6 +2394,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           label: "/goal",
           description: "View, set, or clear this thread's persistent goal",
         },
+        ...(isDesktopSidekickAvailable()
+          ? ([
+              {
+                id: "slash:sidekick",
+                type: "slash-command",
+                command: "sidekick",
+                label: "/sidekick",
+                description: "Show or hide the desktop sidekick",
+              },
+            ] as const)
+          : []),
         ...(_isServerThread
           ? ([
               {
@@ -3690,6 +3702,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           if (applied) {
             setComposerHighlightedItemId(null);
             setIsComposerModelPickerOpen(true);
+          }
+          return;
+        }
+        if (item.command === "sidekick") {
+          const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
+            expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+          });
+          if (applied) {
+            setComposerHighlightedItemId(null);
+            void toggleDesktopSidekick().catch(() => undefined);
           }
           return;
         }

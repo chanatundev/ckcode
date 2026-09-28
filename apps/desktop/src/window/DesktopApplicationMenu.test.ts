@@ -13,6 +13,7 @@ import * as DesktopApplicationMenu from "./DesktopApplicationMenu.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
+import * as DesktopSidekick from "../sidekick/DesktopSidekick.ts";
 import * as DesktopWindow from "./DesktopWindow.ts";
 
 const environmentInput = {
@@ -89,6 +90,13 @@ const makeDesktopWindowLayer = (selectedAction: Deferred.Deferred<string>) =>
     syncAppearance: Effect.void,
   } satisfies DesktopWindow.DesktopWindow["Service"]);
 
+const sidekickLayer = Layer.succeed(DesktopSidekick.DesktopSidekick, {
+  start: Effect.void,
+  setStatus: () => Effect.void,
+  preferences: Effect.succeed({ enabled: false, size: "medium" }),
+  setPreferences: () => Effect.die("unexpected sidekick preferences update"),
+} satisfies DesktopSidekick.DesktopSidekick["Service"]);
+
 const makeElectronMenuLayer = (
   applicationMenuTemplate: Deferred.Deferred<readonly Electron.MenuItemConstructorOptions[]>,
 ) =>
@@ -112,6 +120,7 @@ const configureMenu = (
         Layer.provideMerge(makeElectronMenuLayer(applicationMenuTemplate)),
         Layer.provideMerge(makeDesktopWindowLayer(selectedAction)),
         Layer.provideMerge(desktopUpdatesLayer),
+        Layer.provideMerge(sidekickLayer),
         Layer.provideMerge(electronDialogLayer),
         Layer.provideMerge(electronAppLayer),
         Layer.provideMerge(

@@ -17,7 +17,8 @@ export type ComposerSlashCommand =
   | "pipeline"
   | "goal"
   | "handoff"
-  | "fork";
+  | "fork"
+  | "sidekick";
 export type ComposerSubmissionIntent = "foreground" | "background" | "alternate";
 
 export interface ComposerTrigger {
@@ -295,9 +296,7 @@ export function composerStateAtPromptEnd(text: string): {
   };
 }
 
-export function parseStandaloneComposerSlashCommand(
-  text: string,
-): Exclude<ComposerSlashCommand, "model"> | null {
+export function parseStandaloneComposerSlashCommand(text: string): "plan" | "default" | null {
   const match = /^\/(plan|default)\s*$/i.exec(text.trim());
   if (!match) {
     return null;
@@ -305,6 +304,11 @@ export function parseStandaloneComposerSlashCommand(
   const command = match[1]?.toLowerCase();
   if (command === "plan") return "plan";
   return "default";
+}
+
+/** `/sidekick` typed on its own; it toggles the desktop sidekick instead of sending. */
+export function isStandaloneComposerSidekickCommand(text: string): boolean {
+  return /^\/sidekick\s*$/i.test(text.trim());
 }
 
 export type StandaloneComposerGoalCommand =

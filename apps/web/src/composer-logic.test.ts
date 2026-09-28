@@ -17,6 +17,7 @@ import {
   formatAssistantCitationForComposer,
   isCollapsedCursorAdjacentToInlineToken,
   parseStandaloneComposerSlashCommand,
+  isStandaloneComposerSidekickCommand,
   replaceTextRange,
 } from "./composer-logic";
 import { carryDisplacedCustomAnswerIntoPrompt } from "./pendingUserInput";
@@ -734,5 +735,17 @@ describe("parseStandaloneComposerSlashCommand", () => {
 
   it("ignores slash commands with extra message text", () => {
     expect(parseStandaloneComposerSlashCommand("/plan explain this")).toBeNull();
+  });
+});
+
+describe("isStandaloneComposerSidekickCommand", () => {
+  it("matches /sidekick on its own", () => {
+    expect(isStandaloneComposerSidekickCommand(" /sidekick ")).toBe(true);
+    expect(isStandaloneComposerSidekickCommand("/Sidekick")).toBe(true);
+  });
+
+  it("leaves prompts that only mention it for the provider", () => {
+    expect(isStandaloneComposerSidekickCommand("/sidekick please")).toBe(false);
+    expect(isStandaloneComposerSidekickCommand("show the /sidekick")).toBe(false);
   });
 });

@@ -197,9 +197,10 @@ const desktopApplicationLayer = Layer.mergeAll(
   DesktopApplicationMenu.layer,
   DesktopLinuxUrlHandler.layer,
   DesktopShellEnvironment.layer,
-  DesktopSidekick.layer,
   desktopSshLayer,
 ).pipe(
+  // Provided rather than merged so the application menu shares the instance.
+  Layer.provideMerge(DesktopSidekick.layer),
   Layer.provideMerge(desktopSnapShotLayer),
   Layer.provideMerge(DesktopUpdates.layer),
   Layer.provideMerge(desktopWslBackendLayer),
