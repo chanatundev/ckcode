@@ -1,8 +1,10 @@
-import type {
-  DesktopSidekickState,
-  EnvironmentId,
-  OrchestrationThreadShell,
-  ScopedThreadRef,
+import {
+  DESKTOP_SIDEKICK_MAX_SESSIONS,
+  type DesktopSidekickSession,
+  type DesktopSidekickState,
+  type EnvironmentId,
+  type OrchestrationThreadShell,
+  type ScopedThreadRef,
 } from "@t3tools/contracts";
 
 import { resolveSidebarThreadStatus } from "./components/Sidebar.logic";
@@ -70,6 +72,10 @@ export interface SidekickSnapshot {
   readonly tooltip: string;
   /** Threads in `state`, longest-waiting first. Clicks cycle through these. */
   readonly targets: readonly ScopedThreadRef[];
+  /** Every non-idle thread, most urgent first, capped for the hover list. */
+  readonly sessions: readonly DesktopSidekickSession[];
+  /** Non-idle threads beyond `sessions`. */
+  readonly moreCount: number;
   /** When the snapshot changes without new thread data (falling asleep). */
   readonly nextChangeAtMs: number | null;
 }
@@ -155,6 +161,12 @@ function lastActivityMs(thread: SidekickThreadInput): number {
   );
 }
 
+const MAX_TITLE_LENGTH = 120;
+
+function truncateTitle(title: string): string {
+  return title.length > MAX_TITLE_LENGTH ? `${title.slice(0, MAX_TITLE_LENGTH - 1)}…` : title;
+}
+
 function pluralize(count: number, [singular, plural]: [string, string]) {
   return `${count} ${count === 1 ? singular : plural}`;
 }
@@ -171,6 +183,8 @@ export function resolveSidekickSnapshot(input: {
       badgeCount: 0,
       tooltip: STATE_HEADLINES.offline,
       targets: [],
+      sessions: [],
+      moreCount: 0,
       nextChangeAtMs: null,
     };
   }
@@ -199,11 +213,28 @@ export function resolveSidekickSnapshot(input: {
     }
   }
 
+  const longestWaitingFirst = (
+    left: { ref: ScopedThreadRef; sinceMs: number },
+    right: { ref: ScopedThreadRef; sinceMs: number },
+  ) => left.sinceMs - right.sinceMs || left.ref.threadId.localeCompare(right.ref.threadId);
   const topState = STATE_PRIORITY.find((state) => byState.has(state)) ?? "waiting";
-  const top = (byState.get(topState) ?? []).toSorted(
-    (left, right) =>
-      left.sinceMs - right.sinceMs || left.ref.threadId.localeCompare(right.ref.threadId),
+  const top = (byState.get(topState) ?? []).toSorted(longestWaitingFirst);
+
+  const active = STATE_PRIORITY.flatMap((state) =>
+    state === "waiting"
+      ? []
+      : (byState.get(state) ?? [])
+          .toSorted(longestWaitingFirst)
+          .map((entry) => ({ ...entry, state })),
   );
+  const sessions = active
+    .slice(0, DESKTOP_SIDEKICK_MAX_SESSIONS)
+    .map((entry): DesktopSidekickSession => ({
+      environmentId: entry.ref.environmentId,
+      threadId: entry.ref.threadId,
+      title: truncateTitle(entry.title),
+      state: entry.state,
+    }));
 
   const breakdown = STATE_PRIORITY.flatMap((state) => {
     if (state === "waiting") return [];
@@ -229,6 +260,8 @@ export function resolveSidekickSnapshot(input: {
     badgeCount: ATTENTION_STATES.has(state) ? top.length : 0,
     tooltip: breakdown.length > 0 ? `${headline}\n${breakdown.join(" · ")}` : headline,
     targets: topState === "waiting" ? [] : top.map((entry) => entry.ref),
+    sessions,
+    moreCount: active.length - sessions.length,
     nextChangeAtMs,
   };
 }

@@ -184,6 +184,55 @@ describe("resolveSidekickSnapshot", () => {
     expect(asleep).toMatchObject({ state: "sleeping", nextChangeAtMs: null });
   });
 
+  it("lists every non-idle thread, most urgent first, capped with a remainder", () => {
+    const snapshot = resolveSidekickSnapshot({
+      lastVisitedAt: neverVisited,
+      nowMs: NOW,
+      environments: [
+        env([
+          running("w1"),
+          thread("idle"),
+          running("w3"),
+          running("w2"),
+          thread("done", { latestTurn: settledTurn("done", iso(-10_000)) }),
+        ]),
+        env(
+          [
+            thread("ask", { hasPendingUserInput: true }),
+            thread("approve", { hasPendingApprovals: true }),
+          ],
+          REMOTE,
+        ),
+      ],
+    });
+    expect(snapshot.sessions).toEqual([
+      { environmentId: REMOTE, threadId: "approve", title: "Thread approve", state: "approval" },
+      { environmentId: REMOTE, threadId: "ask", title: "Thread ask", state: "input" },
+      { environmentId: LOCAL, threadId: "w1", title: "Thread w1", state: "working" },
+      { environmentId: LOCAL, threadId: "w2", title: "Thread w2", state: "working" },
+    ]);
+    expect(snapshot.moreCount).toBe(1);
+  });
+
+  it("lists nothing when every thread is idle", () => {
+    const snapshot = resolveSidekickSnapshot({
+      lastVisitedAt: neverVisited,
+      nowMs: NOW,
+      environments: [env([thread("a"), thread("b")])],
+    });
+    expect(snapshot).toMatchObject({ sessions: [], moreCount: 0 });
+  });
+
+  it("truncates long titles for the hover list", () => {
+    const [session] = resolveSidekickSnapshot({
+      lastVisitedAt: neverVisited,
+      nowMs: NOW,
+      environments: [env([running("a", { title: "x".repeat(500) })])],
+    }).sessions;
+    expect(session?.title).toHaveLength(120);
+    expect(session?.title.endsWith("…")).toBe(true);
+  });
+
   it("is offline only when no environment is connected", () => {
     expect(
       resolveSidekickSnapshot({

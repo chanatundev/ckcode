@@ -1,3 +1,4 @@
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import {
@@ -11,7 +12,7 @@ import {
   PreviewAutomationWaitForInput,
 } from "./previewAutomation.ts";
 import { SnapShotSource } from "./orchestration.ts";
-import { EnvironmentId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { EnvironmentId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { BrowserProfileId } from "./browserProfile.ts";
 import type {
   BrowserImportResult,
@@ -20,7 +21,7 @@ import type {
 } from "./browserImport.ts";
 import { AuthAccessTokenResult, AuthSessionState, AuthWebSocketTicketResult } from "./auth.ts";
 import { AdvertisedEndpoint } from "./remoteAccess.ts";
-import { ExecutionEnvironmentDescriptor } from "./environment.ts";
+import { ExecutionEnvironmentDescriptor, ScopedThreadRef } from "./environment.ts";
 import { type ClientSettings, type QuitConfirmationMode, SnapShotShortcut } from "./settings.ts";
 import type { EditorId } from "./editor.ts";
 
@@ -1143,10 +1144,28 @@ export const DESKTOP_SIDEKICK_SIZE_LABELS: Record<DesktopSidekickSize, string> =
   large: "Large",
 };
 
+/** Threads the sidekick lists on hover; idle threads never get one. */
+export const DESKTOP_SIDEKICK_MAX_SESSIONS = 4;
+
+/** One thread the sidekick lists on hover. */
+export const DesktopSidekickSessionSchema = Schema.Struct({
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+  title: Schema.String.check(Schema.isMaxLength(200)),
+  state: Schema.Literals(["approval", "input", "error", "plan", "working", "success"]),
+});
+export type DesktopSidekickSession = typeof DesktopSidekickSessionSchema.Type;
+
 export const DesktopSidekickStatusSchema = Schema.Struct({
   state: DesktopSidekickStateSchema,
   badgeCount: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 9_999 })),
   tooltip: Schema.String.check(Schema.isMaxLength(1_024)),
+  /** Most urgent first. */
+  sessions: Schema.Array(DesktopSidekickSessionSchema).check(
+    Schema.isMaxLength(DESKTOP_SIDEKICK_MAX_SESSIONS),
+  ),
+  /** Active threads beyond `sessions`. */
+  moreCount: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 9_999 })),
 });
 export type DesktopSidekickStatus = typeof DesktopSidekickStatusSchema.Type;
 
@@ -1165,6 +1184,24 @@ export type DesktopSidekickPreferencesPatch = typeof DesktopSidekickPreferencesP
 
 /** Menu action the desktop sends when the sidekick is clicked. */
 export const DESKTOP_SIDEKICK_ACTIVATE_MENU_ACTION = "sidekick-activate";
+
+const DESKTOP_SIDEKICK_OPEN_THREAD_PREFIX = "sidekick-open-thread:";
+const decodeSidekickThreadRef = Schema.decodeUnknownOption(Schema.fromJsonString(ScopedThreadRef));
+
+/** Menu action the desktop sends when one of the sidekick's thread boxes is clicked. */
+export const desktopSidekickOpenThreadMenuAction = (thread: ScopedThreadRef) =>
+  `${DESKTOP_SIDEKICK_OPEN_THREAD_PREFIX}${JSON.stringify({
+    environmentId: thread.environmentId,
+    threadId: thread.threadId,
+  })}`;
+
+/** The thread an open-thread menu action targets; null for any other action. */
+export function parseDesktopSidekickOpenThreadMenuAction(action: string): ScopedThreadRef | null {
+  if (!action.startsWith(DESKTOP_SIDEKICK_OPEN_THREAD_PREFIX)) return null;
+  return Option.getOrNull(
+    decodeSidekickThreadRef(action.slice(DESKTOP_SIDEKICK_OPEN_THREAD_PREFIX.length)),
+  );
+}
 
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;

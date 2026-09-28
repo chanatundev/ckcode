@@ -9,6 +9,7 @@ import { enabledEnvironmentIds } from "@t3tools/client-runtime/state/connections
 import {
   DESKTOP_SIDEKICK_ACTIVATE_MENU_ACTION,
   type DesktopSidekickStatus,
+  parseDesktopSidekickOpenThreadMenuAction,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
@@ -60,7 +61,7 @@ function SidekickStatusPublisher() {
   const [nowMs, setNowMs] = useState(Date.now);
   const targets = useRef<readonly ScopedThreadRef[]>([]);
   const lastOpened = useRef<ScopedThreadRef | null>(null);
-  const lastSent = useRef<DesktopSidekickStatus | null>(null);
+  const lastSentKey = useRef<string | null>(null);
 
   useEffect(() => {
     const snapshot = resolveSidekickSnapshot({
@@ -74,14 +75,13 @@ function SidekickStatusPublisher() {
       state: snapshot.state,
       badgeCount: snapshot.badgeCount,
       tooltip: snapshot.tooltip,
+      sessions: snapshot.sessions,
+      moreCount: snapshot.moreCount,
     } satisfies DesktopSidekickStatus;
-    const previous = lastSent.current;
-    if (
-      previous?.state !== status.state ||
-      previous.badgeCount !== status.badgeCount ||
-      previous.tooltip !== status.tooltip
-    ) {
-      lastSent.current = status;
+    // Thread updates stream in while agents work; only real changes cross IPC.
+    const key = JSON.stringify(status);
+    if (key !== lastSentKey.current) {
+      lastSentKey.current = key;
       window.desktopBridge?.setSidekickStatus?.(status).catch(() => undefined);
     }
     // Falling asleep is the one change no thread event announces.
@@ -96,8 +96,10 @@ function SidekickStatusPublisher() {
   useEffect(
     () =>
       window.desktopBridge?.onMenuAction((action) => {
-        if (action !== DESKTOP_SIDEKICK_ACTIVATE_MENU_ACTION) return;
-        const target = pickSidekickTarget(targets.current, lastOpened.current);
+        const target =
+          action === DESKTOP_SIDEKICK_ACTIVATE_MENU_ACTION
+            ? pickSidekickTarget(targets.current, lastOpened.current)
+            : parseDesktopSidekickOpenThreadMenuAction(action);
         if (target === null) return;
         lastOpened.current = target;
         void navigate({

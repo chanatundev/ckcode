@@ -1,7 +1,13 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import { DesktopEnvironmentBootstrapSchema } from "./ipc.ts";
+import { EnvironmentId, ThreadId } from "./baseSchemas.ts";
+import {
+  DESKTOP_SIDEKICK_ACTIVATE_MENU_ACTION,
+  DesktopEnvironmentBootstrapSchema,
+  desktopSidekickOpenThreadMenuAction,
+  parseDesktopSidekickOpenThreadMenuAction,
+} from "./ipc.ts";
 
 describe("DesktopEnvironmentBootstrapSchema", () => {
   const decode = Schema.decodeUnknownSync(DesktopEnvironmentBootstrapSchema);
@@ -34,5 +40,27 @@ describe("DesktopEnvironmentBootstrapSchema", () => {
         wsBaseUrl: null,
       }).runningDistro,
     ).toBeNull();
+  });
+});
+
+describe("sidekick open-thread menu action", () => {
+  it("round-trips the thread it targets", () => {
+    const thread = {
+      environmentId: EnvironmentId.make("env:with/odd:chars"),
+      threadId: ThreadId.make("thread-1"),
+    };
+    expect(
+      parseDesktopSidekickOpenThreadMenuAction(desktopSidekickOpenThreadMenuAction(thread)),
+    ).toEqual(thread);
+  });
+
+  it("ignores other and malformed actions", () => {
+    expect(parseDesktopSidekickOpenThreadMenuAction(DESKTOP_SIDEKICK_ACTIVATE_MENU_ACTION)).toBe(
+      null,
+    );
+    expect(parseDesktopSidekickOpenThreadMenuAction("sidekick-open-thread:{")).toBe(null);
+    expect(
+      parseDesktopSidekickOpenThreadMenuAction('sidekick-open-thread:{"environmentId":"e"}'),
+    ).toBe(null);
   });
 });
