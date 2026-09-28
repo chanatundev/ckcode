@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   defaultSidekickPosition,
+  expandSidekickBounds,
   resizeSidekickPosition,
   resolveSidekickPosition,
 } from "./SidekickGeometry.ts";
@@ -78,5 +79,46 @@ describe("resizeSidekickPosition", () => {
   it("keeps the sprite centered across size changes", () => {
     expect(resizeSidekickPosition({ x: 100, y: 100 }, 136, 184)).toEqual({ x: 76, y: 76 });
     expect(resizeSidekickPosition({ x: 76, y: 76 }, 184, 136)).toEqual({ x: 100, y: 100 });
+  });
+});
+
+describe("expandSidekickBounds", () => {
+  const panel = { width: 280, height: 150 };
+
+  it("opens above and to the left from the default bottom-right corner", () => {
+    const sprite = defaultSidekickPosition(PRIMARY, 136);
+    const { bounds, layout } = expandSidekickBounds({
+      sprite,
+      size: 136,
+      panel,
+      workArea: PRIMARY,
+    });
+    expect(layout).toEqual({ placement: "above", align: "end" });
+    // The sprite keeps its screen position in the bottom-right of the window.
+    expect(bounds.x + bounds.width).toBe(sprite.x + 136);
+    expect(bounds.y + bounds.height).toBe(sprite.y + 136);
+    expect(bounds).toMatchObject({ width: 280, height: 136 + 10 + 150 });
+  });
+
+  it("opens below when the list would not fit above", () => {
+    const sprite = { x: 40, y: PRIMARY.y + 60 };
+    const { bounds, layout } = expandSidekickBounds({
+      sprite,
+      size: 136,
+      panel,
+      workArea: PRIMARY,
+    });
+    expect(layout).toEqual({ placement: "below", align: "start" });
+    expect(bounds).toMatchObject({ x: sprite.x, y: sprite.y });
+  });
+
+  it("is never narrower than the sprite", () => {
+    const { bounds } = expandSidekickBounds({
+      sprite: { x: 40, y: 600 },
+      size: 184,
+      panel: { width: 120, height: 40 },
+      workArea: PRIMARY,
+    });
+    expect(bounds.width).toBe(184);
   });
 });

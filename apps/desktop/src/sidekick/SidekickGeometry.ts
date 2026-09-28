@@ -87,3 +87,40 @@ export function resizeSidekickPosition(
   const offset = Math.round((fromSize - toSize) / 2);
   return { x: position.x + offset, y: position.y + offset };
 }
+
+/** Space between the sprite and the hover list, in DIPs. The page draws the pointer inside it. */
+export const SIDEKICK_PANEL_GAP_PX = 10;
+
+/** Which side of the sprite the hover list opens on, and which edge they share. */
+export interface SidekickPanelLayout {
+  readonly placement: "above" | "below";
+  readonly align: "start" | "end";
+}
+
+/**
+ * Window bounds that fit the sprite plus its hover list without moving the
+ * sprite on screen. The list opens toward the middle of the work area: above
+ * unless it would not fit, and extending left from sprites on the right half.
+ */
+export function expandSidekickBounds(input: {
+  readonly sprite: DesktopSidekickPosition;
+  readonly size: number;
+  readonly panel: { readonly width: number; readonly height: number };
+  readonly workArea: SidekickRect;
+}): { readonly bounds: SidekickRect; readonly layout: SidekickPanelLayout } {
+  const { sprite, size, panel, workArea } = input;
+  const extent = SIDEKICK_PANEL_GAP_PX + panel.height;
+  const placement = sprite.y - workArea.y >= extent ? "above" : "below";
+  const align = sprite.x + size / 2 > workArea.x + workArea.width / 2 ? "end" : "start";
+  const width = Math.max(size, Math.ceil(panel.width));
+  const height = size + Math.ceil(extent);
+  return {
+    bounds: {
+      x: align === "end" ? sprite.x + size - width : sprite.x,
+      y: placement === "above" ? sprite.y + size - height : sprite.y,
+      width,
+      height,
+    },
+    layout: { placement, align },
+  };
+}

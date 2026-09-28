@@ -1,10 +1,12 @@
 import {
   DESKTOP_SIDEKICK_ACTIVATE_MENU_ACTION,
   DESKTOP_SIDEKICK_SIZE_LABELS,
+  desktopSidekickOpenThreadMenuAction,
   type DesktopSidekickPreferences,
   type DesktopSidekickPreferencesPatch,
   type DesktopSidekickSize,
   type DesktopSidekickStatus,
+  type ScopedThreadRef,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -24,21 +26,26 @@ import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import {
   SIDEKICK_PREFERENCES_CHANGED_CHANNEL,
   SIDEKICK_WINDOW_INPUT_CHANNEL,
+  SIDEKICK_WINDOW_LAYOUT_CHANNEL,
   SIDEKICK_WINDOW_STATUS_CHANNEL,
 } from "../ipc/channels.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
 import {
+  expandSidekickBounds,
   resizeSidekickPosition,
   resolveSidekickPosition,
+  SIDEKICK_PANEL_GAP_PX,
   SIDEKICK_SIZE_PX,
 } from "./SidekickGeometry.ts";
-import { SidekickWindowInput } from "./SidekickWindowInput.ts";
+import { SidekickWindowInput, type SidekickWindowLayout } from "./SidekickWindowInput.ts";
 
 export const INITIAL_SIDEKICK_STATUS: DesktopSidekickStatus = {
   state: "waiting",
   badgeCount: 0,
   tooltip: "",
+  sessions: [],
+  moreCount: 0,
 };
 
 /** Shown once the renderer that publishes status is gone (e.g. the main window closed on macOS). */
@@ -46,6 +53,8 @@ export const UNOBSERVED_SIDEKICK_STATUS: DesktopSidekickStatus = {
   state: "offline",
   badgeCount: 0,
   tooltip: "Open CKcode to see what your agents are doing",
+  sessions: [],
+  moreCount: 0,
 };
 
 export const toSidekickPreferences = (
@@ -98,9 +107,66 @@ export const make = Effect.gen(function* () {
   let sidekickWindow: Electron.BrowserWindow | null = null;
   let windowSize = 0;
   let dragOrigin: { readonly x: number; readonly y: number } | null = null;
+  // Where the sprite sits inside the window while the hover list is open.
+  // Null while collapsed, when the window is exactly the sprite.
+  let spriteOffset: { readonly x: number; readonly y: number } | null = null;
 
   const liveWindow = () =>
     sidekickWindow !== null && !sidekickWindow.isDestroyed() ? sidekickWindow : null;
+
+  const sendLayout = (window: Electron.BrowserWindow, layout: SidekickWindowLayout) =>
+    window.webContents.send(SIDEKICK_WINDOW_LAYOUT_CHANNEL, layout);
+
+  /** The sprite's top-left on screen, which is what gets persisted. */
+  const spritePosition = (window: Electron.BrowserWindow) => {
+    const [x, y] = window.getPosition();
+    return { x: (x ?? 0) + (spriteOffset?.x ?? 0), y: (y ?? 0) + (spriteOffset?.y ?? 0) };
+  };
+
+  /** Shrinks back to just the sprite. Everything that moves or resizes the sprite collapses first. */
+  const collapse = (window: Electron.BrowserWindow) => {
+    if (spriteOffset === null) return;
+    const sprite = spritePosition(window);
+    spriteOffset = null;
+    window.setBounds({ ...sprite, width: windowSize, height: windowSize });
+    sendLayout(window, { expanded: false });
+  };
+
+  /** Grows the window around the sprite so the hover list fits, keeping the sprite still. */
+  const expand = (
+    window: Electron.BrowserWindow,
+    panel: { readonly width: number; readonly height: number },
+  ) => {
+    const sprite = spritePosition(window);
+    const { bounds, layout } = expandSidekickBounds({
+      sprite,
+      size: windowSize,
+      panel,
+      workArea: Electron.screen.getDisplayMatching({
+        ...sprite,
+        width: windowSize,
+        height: windowSize,
+      }).workArea,
+    });
+    // Anchor the sprite to the corner that stays put before the window grows,
+    // so the sprite keeps its screen position through the resize.
+    sendLayout(window, {
+      expanded: true,
+      size: windowSize,
+      gap: SIDEKICK_PANEL_GAP_PX,
+      ...layout,
+    });
+    spriteOffset = { x: sprite.x - bounds.x, y: sprite.y - bounds.y };
+    const current = window.getBounds();
+    if (
+      current.x !== bounds.x ||
+      current.y !== bounds.y ||
+      current.width !== bounds.width ||
+      current.height !== bounds.height
+    ) {
+      window.setBounds(bounds);
+    }
+  };
 
   const resolvePosition = (
     saved: DesktopAppSettings.DesktopSidekickPosition | null,
@@ -132,6 +198,7 @@ export const make = Effect.gen(function* () {
   const reclamp = Effect.gen(function* () {
     const window = liveWindow();
     if (window === null) return;
+    collapse(window);
     const [x, y] = window.getPosition();
     const next = resolvePosition({ x: x ?? 0, y: y ?? 0 }, windowSize);
     if (next.x !== x || next.y !== y) {
@@ -142,13 +209,12 @@ export const make = Effect.gen(function* () {
 
   const updateStatus = (status: DesktopSidekickStatus) =>
     Ref.getAndSet(statusRef, status).pipe(
-      Effect.flatMap((previous) =>
-        previous.state === status.state &&
-        previous.badgeCount === status.badgeCount &&
-        previous.tooltip === status.tooltip
-          ? Effect.void
-          : sendStatus,
-      ),
+      Effect.flatMap((previous) => {
+        if (JSON.stringify(previous) === JSON.stringify(status)) return Effect.void;
+        const window = liveWindow();
+        if (window !== null && status.sessions.length === 0) collapse(window);
+        return sendStatus;
+      }),
     );
 
   // Only the main renderer rolls up status. When its page goes away nothing
@@ -218,6 +284,7 @@ export const make = Effect.gen(function* () {
               Effect.gen(function* () {
                 const current = liveWindow();
                 if (current === null) return;
+                collapse(current);
                 const next = resolvePosition(null, windowSize);
                 current.setPosition(next.x, next.y);
                 yield* persistPosition(null);
@@ -239,6 +306,26 @@ export const make = Effect.gen(function* () {
       ),
     );
 
+  // Only threads the page was actually shown can be opened from it.
+  const openThread = (thread: ScopedThreadRef) =>
+    Effect.gen(function* () {
+      const { sessions } = yield* Ref.get(statusRef);
+      const listed = sessions.some(
+        (session) =>
+          session.environmentId === thread.environmentId && session.threadId === thread.threadId,
+      );
+      if (!listed) return;
+      const window = liveWindow();
+      if (window !== null) collapse(window);
+      yield* desktopWindow
+        .dispatchMenuAction(desktopSidekickOpenThreadMenuAction(thread), { reveal: true })
+        .pipe(
+          Effect.catch((error) =>
+            logWarning("could not open thread from sidekick", { message: error.message }),
+          ),
+        );
+    });
+
   const handleInput = (event: Electron.IpcMainEvent, raw: unknown) => {
     const window = liveWindow();
     if (window === null || event.sender !== window.webContents) return;
@@ -247,6 +334,7 @@ export const make = Effect.gen(function* () {
     const input = decoded.value;
     switch (input.type) {
       case "drag-start": {
+        collapse(window);
         const [x, y] = window.getPosition();
         dragOrigin = { x: x ?? 0, y: y ?? 0 };
         return;
@@ -269,6 +357,24 @@ export const make = Effect.gen(function* () {
         return;
       case "context-menu":
         runFork(showContextMenu);
+        return;
+      case "expand": {
+        if (dragOrigin !== null) return;
+        runFork(
+          Effect.gen(function* () {
+            const { sessions } = yield* Ref.get(statusRef);
+            if (window.isDestroyed()) return;
+            if (sessions.length > 0 && input.height > 0) expand(window, input);
+            else collapse(window);
+          }),
+        );
+        return;
+      }
+      case "collapse":
+        collapse(window);
+        return;
+      case "open-thread":
+        runFork(openThread(input));
         return;
     }
   };
@@ -346,6 +452,7 @@ export const make = Effect.gen(function* () {
     yield* electronWindow.markAuxiliary(window);
     sidekickWindow = window;
     windowSize = size;
+    spriteOffset = null;
     void window.loadFile(htmlPath.value).catch(() => undefined);
   });
 
@@ -369,6 +476,7 @@ export const make = Effect.gen(function* () {
     }
     const size = SIDEKICK_SIZE_PX[settings.sidekickSize];
     if (size === windowSize) return;
+    collapse(window);
     const [x, y] = window.getPosition();
     const next = resolvePosition(
       resizeSidekickPosition({ x: x ?? 0, y: y ?? 0 }, windowSize, size),
