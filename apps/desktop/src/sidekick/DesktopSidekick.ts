@@ -307,6 +307,7 @@ export const make = Effect.gen(function* () {
     window.once("closed", () => {
       if (sidekickWindow === window) sidekickWindow = null;
     });
+    yield* electronWindow.markAuxiliary(window);
     sidekickWindow = window;
     windowSize = size;
     void window.loadFile(htmlPath.value).catch(() => undefined);

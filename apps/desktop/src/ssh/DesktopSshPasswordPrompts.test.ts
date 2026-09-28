@@ -95,6 +95,7 @@ function makeElectronWindowLayer(window: ReturnType<typeof makeTestWindow>["wind
       currentMainOrFirst: Effect.succeedSome(window as Electron.BrowserWindow),
       focusedMainOrFirst: Effect.succeedSome(window as Electron.BrowserWindow),
       setMain: () => Effect.void,
+      markAuxiliary: () => Effect.void,
       clearMain: () => Effect.void,
       prepareReveal: () => Effect.succeed(false),
       reveal: () => Effect.void,

@@ -190,6 +190,32 @@ describe("ElectronWindow", () => {
     }).pipe(Effect.provide(TestLayer)),
   );
 
+  it.effect("never treats an auxiliary window as the main window or syncs its appearance", () =>
+    Effect.gen(function* () {
+      const sidekick = makeBrowserWindow({ id: 1, destroyed: false });
+      const electronWindow = yield* ElectronWindow.ElectronWindow;
+      yield* electronWindow.markAuxiliary(sidekick);
+      getFocusedWindowMock.mockReturnValue(sidekick);
+      getAllWindowsMock.mockReturnValue([sidekick]);
+
+      assert.isTrue((yield* electronWindow.currentMainOrFirst)._tag === "None");
+      assert.isTrue((yield* electronWindow.focusedMainOrFirst)._tag === "None");
+
+      const appWindow = makeBrowserWindow({ id: 2, destroyed: false });
+      getAllWindowsMock.mockReturnValue([sidekick, appWindow]);
+      const main = yield* electronWindow.currentMainOrFirst;
+      assert.strictEqual(main._tag === "Some" ? main.value : null, appWindow);
+
+      const syncedWindows: Electron.BrowserWindow[] = [];
+      yield* electronWindow.syncAllAppearance((window) =>
+        Effect.sync(() => {
+          syncedWindows.push(window);
+        }),
+      );
+      assert.deepEqual(syncedWindows, [appWindow]);
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
   it.effect("preserves window enumeration failures as structured defects", () =>
     Effect.gen(function* () {
       const cause = new Error("window enumeration failed");
