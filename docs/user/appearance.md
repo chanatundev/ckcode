@@ -28,6 +28,21 @@ The main sidebar, right panel, and terminal drawer open and close immediately by
 in your operating system. Moving between threads always snaps to the selected thread's panel state
 without replaying its transitions.
 
+## Sidekick
+
+On desktop, the sidekick is a small character that floats above your other windows and shows what
+your agents are doing across every thread and connected environment. Send `/sidekick`, choose
+**Toggle sidekick** in the command palette or **View → Toggle Sidekick**, or turn on
+**Settings → General → Sidekick**. It is off by default and saved separately on each device.
+
+When several threads differ, it shows the most urgent state: approval needed, then questions,
+failures, ready plans, work in progress, and finished threads you have not opened. A badge counts
+the threads that need you. Click the sidekick to open the thread that has waited longest; click
+again to move to the next. Failures and completions clear once you open the thread. After 30 idle
+minutes it falls asleep, and it only shows as offline when no environment is connected.
+
+Drag it anywhere. Right-click it to change its size, reset its position, or hide it.
+
 ## Custom themes
 
 On web and desktop, choose **Create theme** to adjust a palette, or import a T3 Code or VS Code
