@@ -7381,6 +7381,21 @@ export default function ChatView(props: ChatViewProps) {
       }
       return;
     }
+    // Checked before any thread state (busy, plan follow-up) can claim the text:
+    // toggling the sidekick is local and never reaches the provider.
+    if (
+      !directAnnotation &&
+      !queuedMessage &&
+      !composerHasNonPromptContent &&
+      isDesktopSidekickAvailable() &&
+      isStandaloneComposerSidekickCommand(promptRef.current)
+    ) {
+      void toggleDesktopSidekick().catch(() => undefined);
+      promptRef.current = "";
+      setComposerDraftPrompt(composerDraftTarget, "");
+      composerRef.current?.resetCursorState();
+      return;
+    }
 
     const notifyDirectAnnotationAttached = () => {
       if (!directAnnotation) return;
@@ -7681,23 +7696,6 @@ export default function ChatView(props: ChatViewProps) {
       composerReviewComments.length === 0
         ? parseStandaloneComposerGoalCommand(trimmed)
         : null;
-    if (
-      !queuedMessage &&
-      !directAnnotation &&
-      composerImages.length === 0 &&
-      composerFiles.length === 0 &&
-      sendableComposerTerminalContexts.length === 0 &&
-      composerPreviewAnnotations.length === 0 &&
-      composerReviewComments.length === 0 &&
-      isDesktopSidekickAvailable() &&
-      isStandaloneComposerSidekickCommand(trimmed)
-    ) {
-      void toggleDesktopSidekick().catch(() => undefined);
-      promptRef.current = "";
-      clearComposerDraftContent(composerDraftTarget);
-      composerRef.current?.resetCursorState();
-      return;
-    }
     if (standaloneGoalCommand) {
       if (!isServerThread || !activeThread) {
         toastManager.add({
