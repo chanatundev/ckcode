@@ -41,6 +41,9 @@ the threads that need you. Click the sidekick to open the thread that has waited
 again to move to the next. Failures and completions clear once you open the thread. After 30 idle
 minutes it falls asleep, and it only shows as offline when no environment is connected.
 
+Hover over the sidekick to list the threads that need you, are working, or finished since you last
+opened them, each with its status. Click one to open that thread.
+
 Drag it anywhere. Right-click it to change its size, reset its position, or hide it.
 
 ## Custom themes
