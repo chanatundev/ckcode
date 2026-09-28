@@ -6,6 +6,7 @@ import {
   type DesktopSnapShotState,
 } from "@t3tools/contracts";
 import { useState, type ReactNode } from "react";
+import { appBrandCopy, APP_BASE_NAME } from "~/branding";
 import { MacAccessibilityIcon, MacScreenRecordingIcon } from "../Icons";
 import { CaptureShortcutConfig } from "./CaptureShortcutConfig";
 import { Button } from "../ui/button";
@@ -29,8 +30,9 @@ const SETUP_STEPS = [
 const GNOME_ACCESS_COPY = {
   "not-installed": {
     title: "Install the extension",
-    description:
+    description: appBrandCopy(
       "The T3 Code GNOME extension lets you capture other windows and bring them into your draft. Sign out once after installing.",
+    ),
   },
   "restart-required": {
     title: "Extension installed",
@@ -46,7 +48,7 @@ const GNOME_ACCESS_COPY = {
   },
   disabled: {
     title: "Enable the extension",
-    description: "Enable T3 Code SnapShots to start capturing windows.",
+    description: appBrandCopy("Enable T3 Code SnapShots to start capturing windows."),
   },
   enabled: {
     title: "Capture is ready",
@@ -58,7 +60,7 @@ const GNOME_ACCESS_COPY = {
   },
   error: {
     title: "Couldn't set up the extension",
-    description: "Check T3 Code SnapShots in GNOME Extensions, then try again.",
+    description: appBrandCopy("Check T3 Code SnapShots in GNOME Extensions, then try again."),
   },
 };
 
@@ -173,8 +175,9 @@ export function SnapShotSetupDialog({
                     helper?.status === "update-required"
                       ? "Update the capture helper"
                       : "Allow snapshots",
-                  description:
+                  description: appBrandCopy(
                     "T3 Code's capture helper lets you capture other apps and return to your draft. It's included with T3 Code.",
+                  ),
                 }
           : backend === "niri"
             ? {
@@ -355,7 +358,7 @@ export function SnapShotSetupDialog({
                     </p>
                   ))}
                   {step === "access" && (backend === "gnome" || helperBackend) ? (
-                    <p>Included with T3 Code. No download needed.</p>
+                    <p>Included with {APP_BASE_NAME}. No download needed.</p>
                   ) : null}
                   {step === "access" && backend === "gnome" && extension?.status === "enabled" ? (
                     <Button

@@ -1,3 +1,4 @@
+import { appBrandCopy } from "~/branding";
 import type { EnvironmentId, ServerSelfUpdateCapability } from "@t3tools/contracts";
 import type { ServerUpdateStage, ServerUpdateState } from "@t3tools/client-runtime/state/server";
 import {
@@ -121,7 +122,9 @@ export function ServerUpdatesAction({
       if (desktopTargets.length > 0) {
         const confirmed =
           (await requestConfirmDialog(
-            `Update the T3 Code desktop apps on ${desktopTargets.map((target) => target.serverLabel).join(", ")}? They will close and relaunch on those machines.`,
+            appBrandCopy(
+              `Update the T3 Code desktop apps on ${desktopTargets.map((target) => target.serverLabel).join(", ")}? They will close and relaunch on those machines.`,
+            ),
           )) ?? true;
         if (!confirmed) return;
       }
@@ -231,7 +234,9 @@ export function ServerUpdateAction({
       // remote machine installs without asking anyone there.
       const confirmed =
         (await requestConfirmDialog(
-          `Update the T3 Code desktop app that runs the ${serverLabel}? It will close and relaunch on that machine.`,
+          appBrandCopy(
+            `Update the T3 Code desktop app that runs the ${serverLabel}? It will close and relaunch on that machine.`,
+          ),
         )) ?? true;
       if (!confirmed) {
         return;

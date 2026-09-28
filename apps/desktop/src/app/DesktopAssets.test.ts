@@ -28,7 +28,7 @@ const environmentLayer = DesktopEnvironment.layer({
 );
 
 describe("DesktopAssets", () => {
-  it.effect("uses canonical source-tree icons for unpackaged development", () =>
+  it.effect("uses CKcode source-tree icons for unpackaged development", () =>
     Effect.gen(function* () {
       const developmentEnvironmentLayer = DesktopEnvironment.layer({
         dirname: "/repo/apps/desktop/dist-electron",
@@ -50,7 +50,8 @@ describe("DesktopAssets", () => {
         ),
       );
       const fileSystemLayer = FileSystem.layerNoop({
-        exists: (path) => Effect.succeed(String(path).includes("/assets/dev/")),
+        exists: (path) =>
+          Effect.succeed(String(path).includes("/apps/desktop/resources/branding/")),
       });
       const assets = yield* DesktopAssets.DesktopAssets.pipe(
         Effect.provide(
@@ -62,8 +63,14 @@ describe("DesktopAssets", () => {
 
       const icons = yield* assets.iconPaths;
 
-      assert.match(Option.getOrThrow(icons.ico), /assets\/dev\/blueprint-windows\.ico$/);
-      assert.match(Option.getOrThrow(icons.png), /assets\/dev\/blueprint-universal-1024\.png$/);
+      assert.match(
+        Option.getOrThrow(icons.ico),
+        /apps\/desktop\/resources\/branding\/ckcode\.ico$/,
+      );
+      assert.match(
+        Option.getOrThrow(icons.png),
+        /apps\/desktop\/resources\/branding\/ckcode\.png$/,
+      );
       assert.isTrue(Option.isNone(icons.icns));
     }),
   );

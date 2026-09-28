@@ -22,10 +22,9 @@ import desktopPackageJson from "../apps/desktop/package.json" with { type: "json
 import gnomeCaptureBundle from "../apps/desktop/gnome-extension/bundle.json" with { type: "json" };
 import serverPackageJson from "../apps/server/package.json" with { type: "json" };
 
-import { applyWebBrandAssets } from "./apply-web-brand-assets.ts";
 import {
-  BRAND_ASSET_PATHS,
   resolveWebAssetBrandForChannel,
+  resolveWebIconOverrides,
   type WebAssetBrand,
 } from "./lib/brand-assets.ts";
 import { getDefaultBuildArch } from "./lib/build-target-arch.ts";
@@ -2580,19 +2579,11 @@ export function resolveDesktopWebAssetBrand(version: string): WebAssetBrand {
   return resolveWebAssetBrandForChannel(resolveDesktopUpdateChannel(version));
 }
 
-export function resolveDesktopBuildIconAssets(version: string): DesktopBuildIconAssets {
-  if (resolveDesktopUpdateChannel(version) === "nightly") {
-    return {
-      macIconPng: BRAND_ASSET_PATHS.nightlyMacIconPng,
-      linuxIconPng: BRAND_ASSET_PATHS.nightlyLinuxIconPng,
-      windowsIconIco: BRAND_ASSET_PATHS.nightlyWindowsIconIco,
-    };
-  }
-
+export function resolveDesktopBuildIconAssets(_version: string): DesktopBuildIconAssets {
   return {
-    macIconPng: BRAND_ASSET_PATHS.productionMacIconPng,
-    linuxIconPng: BRAND_ASSET_PATHS.productionLinuxIconPng,
-    windowsIconIco: BRAND_ASSET_PATHS.productionWindowsIconIco,
+    macIconPng: "apps/desktop/resources/branding/ckcode.png",
+    linuxIconPng: "apps/desktop/resources/branding/ckcode.png",
+    windowsIconIco: "apps/desktop/resources/branding/ckcode.ico",
   };
 }
 
@@ -2615,8 +2606,8 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
 
 export function resolveDesktopProductName(version: string): string {
   return resolveDesktopUpdateChannel(version) === "nightly"
-    ? "T3 Code (Nightly)"
-    : (desktopPackageJson.productName ?? "T3 Code");
+    ? "CKcode (Nightly)"
+    : (desktopPackageJson.productName ?? "CKcode");
 }
 
 export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
@@ -2641,7 +2632,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   const buildConfig: Record<string, unknown> = {
     appId: DESKTOP_APP_ID,
     productName: resolveDesktopProductName(version),
-    artifactName: "T3-Code-${version}-${arch}.${ext}",
+    artifactName: "CKcode-${version}-${arch}.${ext}",
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
     files: [
       ...DESKTOP_FILE_EXCLUSIONS,
@@ -2692,11 +2683,11 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       category: "public.app-category.developer-tools",
       extendInfo: {
         NSScreenCaptureUsageDescription:
-          "T3 Code captures the active window when you use the window capture shortcut.",
+          "CKcode captures the active window when you use the window capture shortcut.",
       },
       protocols: [
         {
-          name: "T3 Code",
+          name: "CKcode",
           schemes: ["t3code", "t3code-dev"],
         },
       ],
@@ -2750,7 +2741,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       // t3code:// OAuth callbacks to the app.
       protocols: [
         {
-          name: "T3 Code",
+          name: "CKcode",
           schemes: ["t3code", "t3code-dev"],
         },
       ],
@@ -3534,10 +3525,32 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     });
   }
 
+  // Brand a staging copy so a desktop build cannot change the server's web output.
+  const desktopServerDistDir = path.join(stageRoot, "desktop-server-dist");
+  yield* fs.copy(distDirs.serverDist, desktopServerDistDir);
+  const desktopClientEntry = path.join(desktopServerDistDir, "client/index.html");
+  const clientDirectory = path.dirname(desktopClientEntry);
   const webAssetBrand = resolveDesktopWebAssetBrand(appVersion);
-  yield* applyWebBrandAssets(webAssetBrand, "apps/server/dist/client");
+  yield* Effect.forEach(
+    resolveWebIconOverrides(webAssetBrand, "client"),
+    (override) =>
+      fs.copyFile(
+        path.join(repoRoot, override.sourceRelativePath),
+        path.join(clientDirectory, path.basename(override.targetRelativePath)),
+      ),
+    { concurrency: "unbounded" },
+  );
   yield* Effect.log(`[desktop-artifact] Applied ${webAssetBrand} web client branding.`);
-  yield* validateBundledClientAssets(path.dirname(bundledClientEntry));
+  yield* fs.copyFile(
+    path.join(repoRoot, "apps/desktop/resources/branding/ckcode-renderer.png"),
+    path.join(clientDirectory, "ckcode.png"),
+  );
+  const clientHtml = yield* fs.readFileString(desktopClientEntry);
+  yield* fs.writeFileString(
+    desktopClientEntry,
+    clientHtml.replaceAll("T3 Code", "CKcode").replaceAll("/apple-touch-icon.png", "/ckcode.png"),
+  );
+  yield* validateBundledClientAssets(clientDirectory);
 
   yield* fs.makeDirectory(path.join(stageAppDir, "apps/desktop"), { recursive: true });
   if (options.platform !== "win") {
@@ -3567,7 +3580,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   // On Windows the server tree ships in the server.asar sidecar instead of
   // app.asar (see stageWindowsServerSidecar), so the app stage omits it.
   if (options.platform !== "win") {
-    yield* fs.copy(distDirs.serverDist, path.join(stageAppDir, "apps/server/dist"));
+    yield* fs.copy(desktopServerDistDir, path.join(stageAppDir, "apps/server/dist"));
   }
   yield* stageResourceMonitor({
     repoRoot,
@@ -3666,7 +3679,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     t3codeCommitHash: commitHash,
     private: true,
     packageManager: rootPackageJson.packageManager,
-    description: "T3 Code desktop build",
+    description: "CKcode desktop build",
     // Required by the .deb control file.
     homepage: "https://t3.codes",
     author: "T3 Tools",
@@ -3730,7 +3743,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     yield* stageWindowsServerSidecar({
       stageRoot,
       repoRoot,
-      serverDistDir: distDirs.serverDist,
+      serverDistDir: desktopServerDistDir,
       arch: options.arch,
       appVersion,
       runtimeExternalDependencies: resolvedServerRuntimeExternalDependencies,
