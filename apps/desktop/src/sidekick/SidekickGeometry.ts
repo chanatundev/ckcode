@@ -43,10 +43,18 @@ function clampIntoWorkArea(
   };
 }
 
+/** Distance from a point to a rect; zero when the point is inside it. */
+function distanceToWorkArea(x: number, y: number, area: SidekickRect) {
+  const dx = Math.max(area.x - x, 0, x - (area.x + area.width));
+  const dy = Math.max(area.y - y, 0, y - (area.y + area.height));
+  return Math.hypot(dx, dy);
+}
+
 /**
- * Keeps a saved position on whichever display holds the sidekick's center,
- * pulled fully inside that work area. A position whose display is gone falls
- * back to the default corner of the primary display.
+ * Pulls a saved position fully inside the work area nearest the sidekick's
+ * center, so a drag released past an edge, over the menu bar, or between
+ * monitors snaps to the closest edge. A position far from every display (its
+ * monitor was unplugged) falls back to the primary display's default corner.
  */
 export function resolveSidekickPosition(input: {
   readonly saved: DesktopSidekickPosition | null;
@@ -58,14 +66,14 @@ export function resolveSidekickPosition(input: {
   if (saved !== null) {
     const centerX = saved.x + size / 2;
     const centerY = saved.y + size / 2;
-    const workArea = input.workAreas.find(
-      (area) =>
-        centerX >= area.x &&
-        centerX < area.x + area.width &&
-        centerY >= area.y &&
-        centerY < area.y + area.height,
-    );
-    if (workArea) return clampIntoWorkArea(saved, size, workArea);
+    let nearest: { area: SidekickRect; distance: number } | null = null;
+    for (const area of input.workAreas) {
+      const distance = distanceToWorkArea(centerX, centerY, area);
+      if (nearest === null || distance < nearest.distance) nearest = { area, distance };
+    }
+    if (nearest !== null && nearest.distance <= size) {
+      return clampIntoWorkArea(saved, size, nearest.area);
+    }
   }
   return defaultSidekickPosition(input.primaryWorkArea, size);
 }

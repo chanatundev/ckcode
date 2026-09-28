@@ -43,6 +43,25 @@ describe("resolveSidekickPosition", () => {
     ).toEqual({ x: 1440 - 96, y: 25 });
   });
 
+  it("snaps a drag released over the menu bar or between displays to the nearest edge", () => {
+    expect(
+      resolveSidekickPosition({
+        saved: { x: 600, y: -60 },
+        size: 96,
+        workAreas: [PRIMARY, LEFT],
+        primaryWorkArea: PRIMARY,
+      }),
+    ).toEqual({ x: 600, y: 25 });
+    expect(
+      resolveSidekickPosition({
+        saved: { x: -40, y: 1000 },
+        size: 96,
+        workAreas: [PRIMARY, LEFT],
+        primaryWorkArea: PRIMARY,
+      }),
+    ).toEqual({ x: -96, y: 1080 - 96 });
+  });
+
   it("falls back to the default when the saved display is gone", () => {
     expect(
       resolveSidekickPosition({
