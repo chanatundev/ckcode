@@ -40,6 +40,13 @@ export const INITIAL_SIDEKICK_STATUS: DesktopSidekickStatus = {
   tooltip: "",
 };
 
+/** Shown once the renderer that publishes status is gone (e.g. the main window closed on macOS). */
+export const UNOBSERVED_SIDEKICK_STATUS: DesktopSidekickStatus = {
+  state: "offline",
+  badgeCount: 0,
+  tooltip: "Open CKcode to see what your agents are doing",
+};
+
 export const toSidekickPreferences = (
   settings: DesktopAppSettings.DesktopSettings,
 ): DesktopSidekickPreferences => ({
@@ -67,7 +74,11 @@ export class DesktopSidekick extends Context.Service<
   {
     /** Shows the window if enabled and starts following display changes. Call once the app is ready. */
     readonly start: Effect.Effect<void, never, Scope.Scope>;
-    readonly setStatus: (status: DesktopSidekickStatus) => Effect.Effect<void>;
+    /** `publisherId` is the sending webContents; its teardown resets the status. */
+    readonly setStatus: (
+      status: DesktopSidekickStatus,
+      publisherId?: number,
+    ) => Effect.Effect<void>;
     readonly preferences: Effect.Effect<DesktopSidekickPreferences>;
     readonly setPreferences: (
       patch: DesktopSidekickPreferencesPatch,
@@ -133,6 +144,31 @@ export const make = Effect.gen(function* () {
       yield* persistPosition(next);
     }
   });
+
+  const updateStatus = (status: DesktopSidekickStatus) =>
+    Ref.getAndSet(statusRef, status).pipe(
+      Effect.flatMap((previous) =>
+        previous.state === status.state &&
+        previous.badgeCount === status.badgeCount &&
+        previous.tooltip === status.tooltip
+          ? Effect.void
+          : sendStatus,
+      ),
+    );
+
+  // Only the main renderer rolls up status. When its page goes away nothing
+  // would ever correct the last pose, so fall back to an honest "not watching".
+  const watchedPublishers = new Set<number>();
+  const watchPublisher = (publisherId: number) => {
+    if (watchedPublishers.has(publisherId)) return;
+    const publisher = Electron.webContents.fromId(publisherId);
+    if (publisher === undefined || publisher.isDestroyed()) return;
+    watchedPublishers.add(publisherId);
+    publisher.once("destroyed", () => {
+      watchedPublishers.delete(publisherId);
+      runFork(updateStatus(UNOBSERVED_SIDEKICK_STATUS));
+    });
+  };
 
   const setPreferences = Effect.fn("desktop.sidekick.setPreferences")(function* (
     patch: DesktopSidekickPreferencesPatch,
@@ -319,7 +355,12 @@ export const make = Effect.gen(function* () {
     const settings = yield* appSettings.get;
     const window = liveWindow();
     if (!settings.sidekickEnabled) {
-      window?.close();
+      // Destroy synchronously: an async close() would still look live to a
+      // re-enable that lands before "closed" fires.
+      if (window !== null) {
+        sidekickWindow = null;
+        window.destroy();
+      }
       return;
     }
     if (window === null) {
@@ -374,16 +415,11 @@ export const make = Effect.gen(function* () {
 
   return DesktopSidekick.of({
     start,
-    setStatus: (status) =>
-      Ref.getAndSet(statusRef, status).pipe(
-        Effect.flatMap((previous) =>
-          previous.state === status.state &&
-          previous.badgeCount === status.badgeCount &&
-          previous.tooltip === status.tooltip
-            ? Effect.void
-            : sendStatus,
-        ),
-      ),
+    setStatus: (status, publisherId) =>
+      Effect.gen(function* () {
+        if (publisherId !== undefined) watchPublisher(publisherId);
+        yield* updateStatus(status);
+      }),
     preferences: appSettings.get.pipe(Effect.map(toSidekickPreferences)),
     setPreferences,
   });

@@ -35,7 +35,8 @@ window.addEventListener("DOMContentLoaded", () => {
   let drag: { pointerId: number; startX: number; startY: number; moved: boolean } | null = null;
 
   document.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0) return;
+    // Ctrl+click is the macOS secondary click; contextmenu handles it.
+    if (event.button !== 0 || event.ctrlKey) return;
     drag = {
       pointerId: event.pointerId,
       startX: event.screenX,

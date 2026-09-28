@@ -14,9 +14,9 @@ export const setSidekickStatus = makeIpcMethod({
   channel: IpcChannels.SET_SIDEKICK_STATUS_CHANNEL,
   payload: DesktopSidekickStatusSchema,
   result: Schema.Void,
-  handler: Effect.fn("desktop.ipc.sidekick.setStatus")(function* (status) {
+  handler: Effect.fn("desktop.ipc.sidekick.setStatus")(function* (status, event) {
     const sidekick = yield* DesktopSidekick.DesktopSidekick;
-    yield* sidekick.setStatus(status);
+    yield* sidekick.setStatus(status, event?.sender.id);
   }),
 });
 
