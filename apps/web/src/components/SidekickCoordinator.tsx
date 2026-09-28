@@ -65,17 +65,9 @@ function SidekickStatusPublisher() {
   useEffect(() => {
     const snapshot = resolveSidekickSnapshot({
       nowMs,
-      environments: environments.map((environment) => ({
-        ...environment,
-        threads:
-          environment.threads?.map((thread) => ({
-            ...thread,
-            lastVisitedAt:
-              lastVisitedAtById[
-                scopedThreadKey(scopeThreadRef(environment.environmentId, thread.id))
-              ],
-          })) ?? null,
-      })),
+      environments,
+      lastVisitedAt: (environmentId, threadId) =>
+        lastVisitedAtById[scopedThreadKey(scopeThreadRef(environmentId, threadId))],
     });
     targets.current = snapshot.targets;
     const status = {

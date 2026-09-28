@@ -5,7 +5,7 @@ import type {
   ScopedThreadRef,
 } from "@t3tools/contracts";
 
-import { hasUnseenCompletion, resolveSidebarThreadStatus } from "./components/Sidebar.logic";
+import { resolveSidebarThreadStatus } from "./components/Sidebar.logic";
 import { isLatestTurnSettled } from "./session-logic";
 
 export type SidekickState = DesktopSidekickState;
@@ -48,7 +48,13 @@ export type SidekickThreadInput = Pick<
   | "latestTurn"
   | "session"
   | "backgroundLiveness"
-> & { readonly lastVisitedAt?: string | undefined };
+>;
+
+/** When this client last opened a thread; undefined if it never has. */
+export type SidekickLastVisitedAt = (
+  environmentId: EnvironmentId,
+  threadId: OrchestrationThreadShell["id"],
+) => string | undefined;
 
 export interface SidekickEnvironmentInput {
   readonly environmentId: EnvironmentId;
@@ -95,16 +101,21 @@ function parseMs(value: string | null | undefined): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
-function hasUnseenFailure(thread: SidekickThreadInput): boolean {
-  const failedAt = parseMs(thread.latestTurn?.completedAt) ?? parseMs(thread.session?.updatedAt);
-  const visitedAt = parseMs(thread.lastVisitedAt);
-  // Mirrors hasUnseenCompletion: threads never opened on this client stay quiet.
-  if (failedAt === null || thread.lastVisitedAt === undefined) return false;
-  return visitedAt === null || failedAt > visitedAt;
+/**
+ * Same rule as the sidebar's unseen completion: threads never opened on this
+ * client stay quiet, and an unreadable visit time counts as unseen.
+ */
+function isUnseen(atMs: number | null, lastVisitedAt: string | undefined): boolean {
+  if (atMs === null || lastVisitedAt === undefined) return false;
+  const visitedAt = parseMs(lastVisitedAt);
+  return visitedAt === null || atMs > visitedAt;
 }
 
 /** Per-thread sidekick state, or null when the thread should not count. */
-export function resolveSidekickThreadState(thread: SidekickThreadInput): ThreadState | null {
+export function resolveSidekickThreadState(
+  thread: SidekickThreadInput,
+  lastVisitedAt: string | undefined,
+): ThreadState | null {
   if (thread.archivedAt !== null) return null;
   const status = resolveSidebarThreadStatus(thread);
   if (status === "approval" || status === "input") return status;
@@ -113,7 +124,8 @@ export function resolveSidekickThreadState(thread: SidekickThreadInput): ThreadS
   }
   const failed =
     status === "failed" || (status === "ready" && thread.latestTurn?.state === "error");
-  if (failed && hasUnseenFailure(thread)) return "error";
+  const failedAt = parseMs(thread.latestTurn?.completedAt) ?? parseMs(thread.session?.updatedAt);
+  if (failed && isUnseen(failedAt, lastVisitedAt)) return "error";
   if (
     thread.interactionMode === "plan" &&
     thread.hasActionableProposedPlan &&
@@ -122,7 +134,7 @@ export function resolveSidekickThreadState(thread: SidekickThreadInput): ThreadS
     return "plan";
   }
   if (status === "working") return "working";
-  if (hasUnseenCompletion(thread)) return "success";
+  if (isUnseen(parseMs(thread.latestTurn?.completedAt), lastVisitedAt)) return "success";
   return "waiting";
 }
 
@@ -149,6 +161,7 @@ function pluralize(count: number, [singular, plural]: [string, string]) {
 
 export function resolveSidekickSnapshot(input: {
   readonly environments: readonly SidekickEnvironmentInput[];
+  readonly lastVisitedAt: SidekickLastVisitedAt;
   readonly nowMs: number;
 }): SidekickSnapshot {
   const offlineCount = input.environments.filter((environment) => !environment.connected).length;
@@ -170,7 +183,10 @@ export function resolveSidekickSnapshot(input: {
   for (const environment of input.environments) {
     if (!environment.connected || environment.threads === null) continue;
     for (const thread of environment.threads) {
-      const state = resolveSidekickThreadState(thread);
+      const state = resolveSidekickThreadState(
+        thread,
+        input.lastVisitedAt(environment.environmentId, thread.id),
+      );
       if (state === null) continue;
       latestActivityMs = Math.max(latestActivityMs, lastActivityMs(thread));
       const entries = byState.get(state) ?? [];

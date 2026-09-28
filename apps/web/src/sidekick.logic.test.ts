@@ -65,6 +65,8 @@ function settledTurn(
   };
 }
 
+const neverVisited = () => undefined;
+
 function env(
   threads: readonly SidekickThreadInput[] | null,
   environmentId = LOCAL,
@@ -76,22 +78,14 @@ function env(
 describe("resolveSidekickThreadState", () => {
   it("reports an unseen completion as success and a seen one as waiting", () => {
     const completed = { latestTurn: settledTurn("a", iso(-10_000)) };
-    expect(
-      resolveSidekickThreadState(thread("a", { ...completed, lastVisitedAt: iso(-20_000) })),
-    ).toBe("success");
-    expect(
-      resolveSidekickThreadState(thread("a", { ...completed, lastVisitedAt: iso(-5_000) })),
-    ).toBe("waiting");
+    expect(resolveSidekickThreadState(thread("a", completed), iso(-20_000))).toBe("success");
+    expect(resolveSidekickThreadState(thread("a", completed), iso(-5_000))).toBe("waiting");
   });
 
   it("only reports failures the user has not seen", () => {
     const failed = { latestTurn: settledTurn("a", iso(-10_000), "error") };
-    expect(
-      resolveSidekickThreadState(thread("a", { ...failed, lastVisitedAt: iso(-20_000) })),
-    ).toBe("error");
-    expect(resolveSidekickThreadState(thread("a", { ...failed, lastVisitedAt: iso(-5_000) }))).toBe(
-      "waiting",
-    );
+    expect(resolveSidekickThreadState(thread("a", failed), iso(-20_000))).toBe("error");
+    expect(resolveSidekickThreadState(thread("a", failed), iso(-5_000))).toBe("waiting");
   });
 
   it("reports a settled actionable plan", () => {
@@ -102,13 +96,17 @@ describe("resolveSidekickThreadState", () => {
           hasActionableProposedPlan: true,
           latestTurn: settledTurn("a", iso(-10_000)),
         }),
+        undefined,
       ),
     ).toBe("plan");
   });
 
   it("ignores archived threads", () => {
     expect(
-      resolveSidekickThreadState(thread("a", { archivedAt: iso(0), hasPendingApprovals: true })),
+      resolveSidekickThreadState(
+        thread("a", { archivedAt: iso(0), hasPendingApprovals: true }),
+        undefined,
+      ),
     ).toBeNull();
   });
 });
@@ -116,6 +114,7 @@ describe("resolveSidekickThreadState", () => {
 describe("resolveSidekickSnapshot", () => {
   it("rolls up to the most urgent state across environments", () => {
     const snapshot = resolveSidekickSnapshot({
+      lastVisitedAt: neverVisited,
       nowMs: NOW,
       environments: [
         env([running("a"), running("b")]),
@@ -128,8 +127,20 @@ describe("resolveSidekickSnapshot", () => {
     expect(snapshot.tooltip).toBe("Approval needed: Thread c\n1 approval · 2 working");
   });
 
+  it("looks up visits per environment", () => {
+    const completed = thread("a", { latestTurn: settledTurn("a", iso(-10_000)) });
+    const snapshot = resolveSidekickSnapshot({
+      lastVisitedAt: (environmentId) => (environmentId === REMOTE ? iso(-20_000) : iso(-5_000)),
+      nowMs: NOW,
+      environments: [env([completed]), env([completed], REMOTE)],
+    });
+    expect(snapshot.state).toBe("success");
+    expect(snapshot.targets).toEqual([{ environmentId: REMOTE, threadId: "a" }]);
+  });
+
   it("orders targets longest-waiting first", () => {
     const snapshot = resolveSidekickSnapshot({
+      lastVisitedAt: neverVisited,
       nowMs: NOW,
       environments: [
         env([
@@ -145,6 +156,7 @@ describe("resolveSidekickSnapshot", () => {
 
   it("does not badge non-attention states", () => {
     const snapshot = resolveSidekickSnapshot({
+      lastVisitedAt: neverVisited,
       nowMs: NOW,
       environments: [env([running("a"), running("b")])],
     });
@@ -154,13 +166,18 @@ describe("resolveSidekickSnapshot", () => {
 
   it("falls asleep after a long idle and reports when it will", () => {
     const idle = [thread("a", { updatedAt: iso(-60_000) })];
-    const awake = resolveSidekickSnapshot({ nowMs: NOW, environments: [env(idle)] });
+    const awake = resolveSidekickSnapshot({
+      lastVisitedAt: neverVisited,
+      nowMs: NOW,
+      environments: [env(idle)],
+    });
     expect(awake).toMatchObject({
       state: "waiting",
       targets: [],
       nextChangeAtMs: NOW - 60_000 + SIDEKICK_SLEEP_AFTER_MS,
     });
     const asleep = resolveSidekickSnapshot({
+      lastVisitedAt: neverVisited,
       nowMs: NOW + SIDEKICK_SLEEP_AFTER_MS,
       environments: [env(idle)],
     });
@@ -169,9 +186,14 @@ describe("resolveSidekickSnapshot", () => {
 
   it("is offline only when no environment is connected", () => {
     expect(
-      resolveSidekickSnapshot({ nowMs: NOW, environments: [env(null, LOCAL, false)] }).state,
+      resolveSidekickSnapshot({
+        lastVisitedAt: neverVisited,
+        nowMs: NOW,
+        environments: [env(null, LOCAL, false)],
+      }).state,
     ).toBe("offline");
     const partial = resolveSidekickSnapshot({
+      lastVisitedAt: neverVisited,
       nowMs: NOW,
       environments: [env([running("a")]), env([running("b")], REMOTE, false)],
     });
