@@ -324,7 +324,10 @@ export const make = Effect.gen(function* () {
         sandbox: true,
       },
     });
-    window.setAlwaysOnTop(true, environment.platform === "darwin" ? "floating" : "normal");
+    // Status level on macOS: tiling window managers with virtual workspaces
+    // (e.g. OmniWM) adopt floating-level windows and park them off-screen on
+    // every workspace switch, but leave status-level surfaces alone.
+    window.setAlwaysOnTop(true, environment.platform === "darwin" ? "status" : "normal");
     if (environment.platform === "darwin") {
       window.setVisibleOnAllWorkspaces(true, {
         visibleOnFullScreen: true,
