@@ -1,6 +1,9 @@
 import {
   DesktopServerExposureModeSchema,
+  DesktopSidekickSizeSchema,
   type DesktopServerExposureMode,
+  type DesktopSidekickPreferencesPatch,
+  type DesktopSidekickSize,
 } from "@t3tools/contracts";
 import { fromLenientJson } from "@t3tools/shared/schemaJson";
 import * as Context from "effect/Context";
@@ -27,6 +30,10 @@ export interface DesktopSettings {
   readonly mainWindowBounds: DesktopWindowBounds | null;
   readonly mainWindowMaximized: boolean;
   readonly serverExposureMode: DesktopServerExposureMode;
+  readonly sidekickEnabled: boolean;
+  readonly sidekickSize: DesktopSidekickSize;
+  // Top-left of the sidekick window in screen coordinates; null until dragged.
+  readonly sidekickPosition: DesktopSidekickPosition | null;
   readonly tailscaleServeEnabled: boolean;
   readonly tailscaleServePort: number;
   // Was a "local" | "wsl" swap mode in an earlier iteration of the WSL
@@ -63,6 +70,8 @@ export const DesktopWindowBoundsSchema = Schema.Struct({
   height: Schema.Int.check(Schema.isGreaterThanOrEqualTo(MIN_MAIN_WINDOW_SIZE.height)),
 });
 export type DesktopWindowBounds = typeof DesktopWindowBoundsSchema.Type;
+export const DesktopSidekickPositionSchema = Schema.Struct({ x: Schema.Int, y: Schema.Int });
+export type DesktopSidekickPosition = typeof DesktopSidekickPositionSchema.Type;
 export const DEFAULT_MAIN_WINDOW_SIZE = {
   width: 1100,
   height: 780,
@@ -74,6 +83,9 @@ export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
   mainWindowBounds: null,
   mainWindowMaximized: false,
   serverExposureMode: "local-only",
+  sidekickEnabled: false,
+  sidekickSize: "medium",
+  sidekickPosition: null,
   tailscaleServeEnabled: false,
   tailscaleServePort: DEFAULT_TAILSCALE_SERVE_PORT,
   wslBackendEnabled: false,
@@ -94,6 +106,9 @@ const DesktopSettingsDocument = Schema.Struct({
   mainWindowBounds: Schema.optionalKey(Schema.NullOr(DesktopWindowBoundsDocument)),
   mainWindowMaximized: Schema.optionalKey(Schema.Boolean),
   serverExposureMode: Schema.optionalKey(DesktopServerExposureModeSchema),
+  sidekickEnabled: Schema.optionalKey(Schema.Boolean),
+  sidekickSize: Schema.optionalKey(Schema.Unknown),
+  sidekickPosition: Schema.optionalKey(Schema.NullOr(Schema.Unknown)),
   tailscaleServeEnabled: Schema.optionalKey(Schema.Boolean),
   tailscaleServePort: Schema.optionalKey(Schema.Number),
   // Newer form of the WSL toggle. `wslMode` is still accepted on load so
@@ -112,6 +127,8 @@ const DesktopSettingsJson = fromLenientJson(DesktopSettingsDocument);
 const decodeDesktopSettingsJson = Schema.decodeEffect(DesktopSettingsJson);
 const encodeDesktopSettingsJson = Schema.encodeEffect(DesktopSettingsJson);
 const decodeDesktopWindowBounds = Schema.decodeUnknownOption(DesktopWindowBoundsSchema);
+const decodeDesktopSidekickSize = Schema.decodeUnknownOption(DesktopSidekickSizeSchema);
+const decodeDesktopSidekickPosition = Schema.decodeUnknownOption(DesktopSidekickPositionSchema);
 const desktopWindowBoundsEquivalence = Schema.toEquivalence(DesktopWindowBoundsSchema);
 
 const settingsChange = (settings: DesktopSettings, changed: boolean): DesktopSettingsChange => ({
@@ -155,6 +172,12 @@ export class DesktopAppSettings extends Context.Service<
     ) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
     readonly setServerExposureMode: (
       mode: DesktopServerExposureMode,
+    ) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
+    readonly setSidekickPreferences: (
+      patch: DesktopSidekickPreferencesPatch,
+    ) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
+    readonly setSidekickPosition: (
+      position: DesktopSidekickPosition | null,
     ) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
     readonly setTailscaleServe: (input: {
       readonly enabled: boolean;
@@ -208,6 +231,12 @@ function normalizeDesktopSettingsDocument(parsed: DesktopSettingsDocument): Desk
     mainWindowMaximized: mainWindowBounds !== null && parsed.mainWindowMaximized === true,
     serverExposureMode:
       parsed.serverExposureMode === "network-accessible" ? "network-accessible" : "local-only",
+    sidekickEnabled: parsed.sidekickEnabled === true,
+    sidekickSize: Option.getOrElse(
+      decodeDesktopSidekickSize(parsed.sidekickSize),
+      () => DEFAULT_DESKTOP_SETTINGS.sidekickSize,
+    ),
+    sidekickPosition: Option.getOrNull(decodeDesktopSidekickPosition(parsed.sidekickPosition)),
     tailscaleServeEnabled: parsed.tailscaleServeEnabled === true,
     tailscaleServePort: normalizeTailscaleServePort(parsed.tailscaleServePort),
     wslBackendEnabled,
@@ -238,6 +267,15 @@ function toDesktopSettingsDocument(
   if (settings.serverExposureMode !== defaults.serverExposureMode) {
     document.serverExposureMode = settings.serverExposureMode;
   }
+  if (settings.sidekickEnabled !== defaults.sidekickEnabled) {
+    document.sidekickEnabled = settings.sidekickEnabled;
+  }
+  if (settings.sidekickSize !== defaults.sidekickSize) {
+    document.sidekickSize = settings.sidekickSize;
+  }
+  if (settings.sidekickPosition !== null) {
+    document.sidekickPosition = settings.sidekickPosition;
+  }
   if (settings.tailscaleServeEnabled !== defaults.tailscaleServeEnabled) {
     document.tailscaleServeEnabled = settings.tailscaleServeEnabled;
   }
@@ -267,6 +305,28 @@ function setServerExposureMode(
         ...settings,
         serverExposureMode: requestedMode,
       };
+}
+
+function setSidekickPreferences(
+  settings: DesktopSettings,
+  patch: DesktopSidekickPreferencesPatch,
+): DesktopSettings {
+  const enabled = patch.enabled ?? settings.sidekickEnabled;
+  const size = patch.size ?? settings.sidekickSize;
+  return settings.sidekickEnabled === enabled && settings.sidekickSize === size
+    ? settings
+    : { ...settings, sidekickEnabled: enabled, sidekickSize: size };
+}
+
+function setSidekickPosition(
+  settings: DesktopSettings,
+  position: DesktopSidekickPosition | null,
+): DesktopSettings {
+  const current = settings.sidekickPosition;
+  const unchanged =
+    current === position ||
+    (current !== null && position !== null && current.x === position.x && current.y === position.y);
+  return unchanged ? settings : { ...settings, sidekickPosition: position };
 }
 
 function setMainWindowBounds(
@@ -484,6 +544,14 @@ export const make = Effect.gen(function* () {
       persist((settings) => setServerExposureMode(settings, mode)).pipe(
         Effect.withSpan("desktop.settings.setServerExposureMode", { attributes: { mode } }),
       ),
+    setSidekickPreferences: (patch) =>
+      persist((settings) => setSidekickPreferences(settings, patch)).pipe(
+        Effect.withSpan("desktop.settings.setSidekickPreferences", { attributes: patch }),
+      ),
+    setSidekickPosition: (position) =>
+      persist((settings) => setSidekickPosition(settings, position)).pipe(
+        Effect.withSpan("desktop.settings.setSidekickPosition"),
+      ),
     setTailscaleServe: (input) =>
       persist((settings) => setTailscaleServe(settings, input)).pipe(
         Effect.withSpan("desktop.settings.setTailscaleServe", { attributes: input }),
@@ -541,6 +609,10 @@ export const layerTest = (initialSettings: DesktopSettings = DEFAULT_DESKTOP_SET
           update((settings) => setMainWindowBounds(settings, bounds, isMaximized)),
         setServerExposureMode: (mode) =>
           update((settings) => setServerExposureMode(settings, mode)),
+        setSidekickPreferences: (patch) =>
+          update((settings) => setSidekickPreferences(settings, patch)),
+        setSidekickPosition: (position) =>
+          update((settings) => setSidekickPosition(settings, position)),
         setTailscaleServe: (input) => update((settings) => setTailscaleServe(settings, input)),
         setWslBackendEnabled: (enabled) =>
           update((settings) => setWslBackendEnabled(settings, enabled)),

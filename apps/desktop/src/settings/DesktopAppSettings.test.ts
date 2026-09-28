@@ -26,6 +26,11 @@ const DesktopSettingsPatch = Schema.Struct({
   ),
   mainWindowMaximized: Schema.optionalKey(Schema.Boolean),
   serverExposureMode: Schema.optionalKey(Schema.Literals(["local-only", "network-accessible"])),
+  sidekickEnabled: Schema.optionalKey(Schema.Boolean),
+  sidekickSize: Schema.optionalKey(Schema.String),
+  sidekickPosition: Schema.optionalKey(
+    Schema.NullOr(Schema.Struct({ x: Schema.Number, y: Schema.Number })),
+  ),
   tailscaleServeEnabled: Schema.optionalKey(Schema.Boolean),
   tailscaleServePort: Schema.optionalKey(Schema.Number),
   wslBackendEnabled: Schema.optionalKey(Schema.Boolean),
@@ -133,6 +138,9 @@ describe("DesktopSettings", () => {
           localEnvironmentEnabled: true,
           mainWindowBounds: null,
           mainWindowMaximized: false,
+          sidekickEnabled: false,
+          sidekickSize: "medium",
+          sidekickPosition: null,
           serverExposureMode: "network-accessible",
           tailscaleServeEnabled: true,
           tailscaleServePort: 8443,
@@ -230,6 +238,9 @@ describe("DesktopSettings", () => {
           localEnvironmentEnabled: true,
           mainWindowBounds: { x: 120, y: 80, width: 1280, height: 900 },
           mainWindowMaximized: false,
+          sidekickEnabled: false,
+          sidekickSize: "medium",
+          sidekickPosition: null,
           serverExposureMode: "network-accessible",
           tailscaleServeEnabled: true,
           tailscaleServePort: 8443,
@@ -285,6 +296,9 @@ describe("DesktopSettings", () => {
             localEnvironmentEnabled: true,
             mainWindowBounds: null,
             mainWindowMaximized: false,
+            sidekickEnabled: false,
+            sidekickSize: "medium",
+            sidekickPosition: null,
             serverExposureMode: "network-accessible",
             tailscaleServeEnabled: true,
             tailscaleServePort: 8443,
@@ -318,6 +332,52 @@ describe("DesktopSettings", () => {
     ),
   );
 
+  it.effect("persists sidekick preferences and position sparsely", () =>
+    withSettings(
+      Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const settings = yield* DesktopAppSettings.DesktopAppSettings;
+
+        assert.isTrue((yield* settings.setSidekickPreferences({ enabled: true })).changed);
+        assert.isFalse((yield* settings.setSidekickPreferences({ size: "medium" })).changed);
+        yield* settings.setSidekickPreferences({ size: "large" });
+        yield* settings.setSidekickPosition({ x: -300, y: 120 });
+        assert.isFalse((yield* settings.setSidekickPosition({ x: -300, y: 120 })).changed);
+
+        const persisted = yield* decodeDesktopSettingsPatch(
+          yield* fileSystem.readFileString(environment.desktopSettingsPath),
+        );
+        assert.deepEqual(persisted, {
+          sidekickEnabled: true,
+          sidekickSize: "large",
+          sidekickPosition: { x: -300, y: 120 },
+        } satisfies typeof DesktopSettingsPatch.Type);
+
+        yield* settings.setSidekickPreferences({ enabled: false, size: "medium" });
+        yield* settings.setSidekickPosition(null);
+        assert.deepEqual(yield* settings.load, DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS);
+      }),
+    ),
+  );
+
+  it.effect("drops invalid persisted sidekick size and position", () =>
+    withSettings(
+      Effect.gen(function* () {
+        const settings = yield* DesktopAppSettings.DesktopAppSettings;
+        yield* writeSettingsPatch({
+          sidekickEnabled: true,
+          sidekickSize: "huge",
+          sidekickPosition: { x: 1.5, y: 20 },
+        });
+        const loaded = yield* settings.load;
+        assert.isTrue(loaded.sidekickEnabled);
+        assert.equal(loaded.sidekickSize, "medium");
+        assert.isNull(loaded.sidekickPosition);
+      }),
+    ),
+  );
+
   it.effect("normalizes invalid persisted Tailscale Serve ports", () =>
     withSettings(
       Effect.gen(function* () {
@@ -332,6 +392,9 @@ describe("DesktopSettings", () => {
           localEnvironmentEnabled: true,
           mainWindowBounds: null,
           mainWindowMaximized: false,
+          sidekickEnabled: false,
+          sidekickSize: "medium",
+          sidekickPosition: null,
           serverExposureMode: "local-only",
           tailscaleServeEnabled: true,
           tailscaleServePort: 443,

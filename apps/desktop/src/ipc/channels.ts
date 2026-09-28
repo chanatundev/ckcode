@@ -115,3 +115,7 @@ export const MAC_PERMISSION_HELPER_CHANNEL = "desktop:mac-permission-helper";
 export const CHECK_SYSTEM_PERMISSION_CHANNEL = "desktop:check-system-permission";
 
 export const PREVIEW_RECORDING_INPUT_CHANNEL = "desktop:preview-recording-input";
+export const SET_SIDEKICK_STATUS_CHANNEL = "desktop:set-sidekick-status";
+export const GET_SIDEKICK_PREFERENCES_CHANNEL = "desktop:get-sidekick-preferences";
+export const SET_SIDEKICK_PREFERENCES_CHANNEL = "desktop:set-sidekick-preferences";
+export const SIDEKICK_PREFERENCES_CHANGED_CHANNEL = "desktop:sidekick-preferences-changed";

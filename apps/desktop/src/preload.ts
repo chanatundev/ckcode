@@ -79,6 +79,20 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     ipcRenderer.on(IpcChannels.SET_NOTIFICATION_BADGE_CHANNEL, handler);
     return () => ipcRenderer.removeListener(IpcChannels.SET_NOTIFICATION_BADGE_CHANNEL, handler);
   },
+  setSidekickStatus: (status) =>
+    ipcRenderer.invoke(IpcChannels.SET_SIDEKICK_STATUS_CHANNEL, status),
+  getSidekickPreferences: () => ipcRenderer.invoke(IpcChannels.GET_SIDEKICK_PREFERENCES_CHANNEL),
+  setSidekickPreferences: (patch) =>
+    ipcRenderer.invoke(IpcChannels.SET_SIDEKICK_PREFERENCES_CHANNEL, patch),
+  onSidekickPreferences: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, preferences: unknown) => {
+      if (typeof preferences !== "object" || preferences === null) return;
+      listener(preferences as Parameters<typeof listener>[0]);
+    };
+    ipcRenderer.on(IpcChannels.SIDEKICK_PREFERENCES_CHANGED_CHANNEL, handler);
+    return () =>
+      ipcRenderer.removeListener(IpcChannels.SIDEKICK_PREFERENCES_CHANGED_CHANNEL, handler);
+  },
   onTrackpadScrollEnd: (listener) => {
     const handler = () => listener();
     ipcRenderer.on(IpcChannels.TRACKPAD_SCROLL_END_CHANNEL, handler);

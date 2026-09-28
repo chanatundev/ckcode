@@ -4,6 +4,11 @@ import * as DesktopIpc from "./DesktopIpc.ts";
 import { installNotificationBadge } from "./methods/notificationBadge.ts";
 import { getClientSettings, setClientSettings } from "./methods/clientSettings.ts";
 import {
+  getSidekickPreferences,
+  setSidekickPreferences,
+  setSidekickStatus,
+} from "./methods/sidekick.ts";
+import {
   clearConnectionCatalog,
   getConnectionCatalog,
   setConnectionCatalog,
@@ -85,6 +90,10 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handleSync(getLocalEnvironmentEnabled);
   yield* ipc.handle(setLocalEnvironmentEnabled);
   yield* ipc.handle(getLocalEnvironmentBearerToken);
+
+  yield* ipc.handle(setSidekickStatus);
+  yield* ipc.handle(getSidekickPreferences);
+  yield* ipc.handle(setSidekickPreferences);
 
   yield* ipc.handle(getClientSettings);
   yield* ipc.handle(setClientSettings);

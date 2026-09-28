@@ -1121,6 +1121,45 @@ export const DesktopPreviewAutomationWaitForInputSchema = Schema.Struct({
 export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access"]);
 export type SystemSettingsPane = typeof SystemSettingsPaneSchema.Type;
 
+/** The desktop sidekick's pose, rolled up across every thread and environment. */
+export const DesktopSidekickStateSchema = Schema.Literals([
+  "approval",
+  "input",
+  "error",
+  "plan",
+  "working",
+  "success",
+  "waiting",
+  "sleeping",
+  "offline",
+]);
+export type DesktopSidekickState = typeof DesktopSidekickStateSchema.Type;
+
+export const DesktopSidekickSizeSchema = Schema.Literals(["small", "medium", "large"]);
+export type DesktopSidekickSize = typeof DesktopSidekickSizeSchema.Type;
+
+export const DesktopSidekickStatusSchema = Schema.Struct({
+  state: DesktopSidekickStateSchema,
+  badgeCount: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 9_999 })),
+  tooltip: Schema.String.check(Schema.isMaxLength(1_024)),
+});
+export type DesktopSidekickStatus = typeof DesktopSidekickStatusSchema.Type;
+
+export const DesktopSidekickPreferencesSchema = Schema.Struct({
+  enabled: Schema.Boolean,
+  size: DesktopSidekickSizeSchema,
+});
+export type DesktopSidekickPreferences = typeof DesktopSidekickPreferencesSchema.Type;
+
+export const DesktopSidekickPreferencesPatchSchema = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+  size: Schema.optionalKey(DesktopSidekickSizeSchema),
+});
+export type DesktopSidekickPreferencesPatch = typeof DesktopSidekickPreferencesPatchSchema.Type;
+
+/** Menu action the desktop sends when the sidekick is clicked. */
+export const DESKTOP_SIDEKICK_ACTIVATE_MENU_ACTION = "sidekick-activate";
+
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
   /** Absolute path of a dropped or picked file; absent on desktop builds predating it. */
@@ -1129,6 +1168,15 @@ export interface DesktopBridge {
   getClientPlatform?: () => string;
   setNotificationBadge?: (badge: { count: number; image: string | null }) => Promise<void>;
   onNotificationBadgeClear?: (listener: () => void) => () => void;
+  /** Sidekick members are optional: web builds and older desktop builds lack them. */
+  setSidekickStatus?: (status: DesktopSidekickStatus) => Promise<void>;
+  getSidekickPreferences?: () => Promise<DesktopSidekickPreferences>;
+  setSidekickPreferences?: (
+    patch: DesktopSidekickPreferencesPatch,
+  ) => Promise<DesktopSidekickPreferences>;
+  onSidekickPreferences?: (
+    listener: (preferences: DesktopSidekickPreferences) => void,
+  ) => () => void;
   onTrackpadScrollEnd?: (listener: () => void) => () => void;
   /**
    * The OS locale as a BCP-47 tag, which the renderer cannot read for itself:
