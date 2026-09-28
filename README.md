@@ -4,6 +4,14 @@
 
 This fork's `main` branch is based on an older upstream snapshot, so it does not include every recent upstream change. This README covers only the fork-specific additions; see the [upstream README](https://github.com/pingdotgg/t3code#readme) for shared setup and documentation.
 
+## Where edits are targeted
+
+My setup uses a hybrid local/remote workflow tailored for multi-environment development:
+
+- **macOS Desktop App as the primary client:** The desktop app on macOS is used as the single front-end interface for navigating projects, chatting, and directing agents.
+- **Server-hosted projects for specific repositories:** Rather than hosting every repository on the server, only specific projects are hosted and managed on the remote server (running the core service in the background). Other repositories remain local on the Mac.
+- **Remote core execution:** For server-managed repositories, the core backend (`t3 serve` / background service) runs directly on the remote machine. When interacting with these projects from the macOS desktop app (connected via T3 Connect, SSH, or private network), all file operations, terminal commands, agent turns, and MCP tools execute natively on the server where the codebase lives.
+
 ## Fork-specific additions
 
 ### Desktop branding
