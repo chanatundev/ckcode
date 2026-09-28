@@ -1,16 +1,38 @@
-import type {
-  DesktopSidekickPreferences,
-  DesktopSidekickPreferencesPatch,
-  DesktopSidekickStatus,
+import {
+  DESKTOP_SIDEKICK_ACTIVATE_MENU_ACTION,
+  type DesktopSidekickPreferences,
+  type DesktopSidekickPreferencesPatch,
+  type DesktopSidekickSize,
+  type DesktopSidekickStatus,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
+import * as Schema from "effect/Schema";
+import type * as Scope from "effect/Scope";
+import * as Electron from "electron";
 
+import * as DesktopAssets from "../app/DesktopAssets.ts";
+import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import { makeComponentLogger } from "../app/DesktopObservability.ts";
+import * as ElectronApp from "../electron/ElectronApp.ts";
+import * as ElectronMenu from "../electron/ElectronMenu.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
-import { SIDEKICK_PREFERENCES_CHANGED_CHANNEL } from "../ipc/channels.ts";
+import {
+  SIDEKICK_PREFERENCES_CHANGED_CHANNEL,
+  SIDEKICK_WINDOW_INPUT_CHANNEL,
+  SIDEKICK_WINDOW_STATUS_CHANNEL,
+} from "../ipc/channels.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
+import * as DesktopWindow from "../window/DesktopWindow.ts";
+import {
+  resizeSidekickPosition,
+  resolveSidekickPosition,
+  SIDEKICK_SIZE_PX,
+} from "./SidekickGeometry.ts";
+import { SidekickWindowInput } from "./SidekickWindowInput.ts";
 
 export const INITIAL_SIDEKICK_STATUS: DesktopSidekickStatus = {
   state: "waiting",
@@ -25,15 +47,26 @@ export const toSidekickPreferences = (
   size: settings.sidekickSize,
 });
 
+const SIZE_LABELS: Record<DesktopSidekickSize, string> = {
+  small: "Small",
+  medium: "Medium",
+  large: "Large",
+};
+
+const { logWarning } = makeComponentLogger("desktop-sidekick");
+const decodeWindowInput = Schema.decodeUnknownOption(SidekickWindowInput);
+
 /**
- * Owns the sidekick's persisted preferences and the latest status the main
- * renderer rolled up. Preference changes are broadcast so every entry point
- * (settings, slash command, menus) stays in sync.
+ * Owns the floating sidekick window: its persisted preferences, the latest
+ * status the main renderer rolled up, and the pointer input from the window
+ * itself. Preference changes are broadcast so every entry point (settings,
+ * slash command, menus) stays in sync.
  */
 export class DesktopSidekick extends Context.Service<
   DesktopSidekick,
   {
-    readonly status: Effect.Effect<DesktopSidekickStatus>;
+    /** Shows the window if enabled and starts following display changes. Call once the app is ready. */
+    readonly start: Effect.Effect<void, never, Scope.Scope>;
     readonly setStatus: (status: DesktopSidekickStatus) => Effect.Effect<void>;
     readonly preferences: Effect.Effect<DesktopSidekickPreferences>;
     readonly setPreferences: (
@@ -45,23 +78,313 @@ export class DesktopSidekick extends Context.Service<
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
+  const environment = yield* DesktopEnvironment.DesktopEnvironment;
+  const assets = yield* DesktopAssets.DesktopAssets;
+  const electronApp = yield* ElectronApp.ElectronApp;
+  const electronMenu = yield* ElectronMenu.ElectronMenu;
   const electronWindow = yield* ElectronWindow.ElectronWindow;
-  const statusRef = yield* Ref.make(INITIAL_SIDEKICK_STATUS);
+  const desktopWindow = yield* DesktopWindow.DesktopWindow;
+  const runFork = Effect.runForkWith(yield* Effect.context<never>());
 
-  const preferences = appSettings.get.pipe(Effect.map(toSidekickPreferences));
+  const statusRef = yield* Ref.make(INITIAL_SIDEKICK_STATUS);
+  const startedRef = yield* Ref.make(false);
+  // Electron objects live on the main thread; plain mutable state is enough.
+  let sidekickWindow: Electron.BrowserWindow | null = null;
+  let windowSize = 0;
+  let dragOrigin: { readonly x: number; readonly y: number } | null = null;
+
+  const liveWindow = () =>
+    sidekickWindow !== null && !sidekickWindow.isDestroyed() ? sidekickWindow : null;
+
+  const resolvePosition = (
+    saved: DesktopAppSettings.DesktopSidekickPosition | null,
+    size: number,
+  ) =>
+    resolveSidekickPosition({
+      saved,
+      size,
+      workAreas: Electron.screen.getAllDisplays().map((display) => display.workArea),
+      primaryWorkArea: Electron.screen.getPrimaryDisplay().workArea,
+    });
+
+  const persistPosition = (position: DesktopAppSettings.DesktopSidekickPosition | null) =>
+    appSettings
+      .setSidekickPosition(position)
+      .pipe(
+        Effect.catch((error) =>
+          logWarning("could not persist sidekick position", { message: error.message }),
+        ),
+      );
+
+  const sendStatus = Effect.gen(function* () {
+    const window = liveWindow();
+    if (window === null || window.webContents.isLoadingMainFrame()) return;
+    window.webContents.send(SIDEKICK_WINDOW_STATUS_CHANNEL, yield* Ref.get(statusRef));
+  });
+
+  /** Moves the window back inside a display, e.g. after a monitor is unplugged. */
+  const reclamp = Effect.gen(function* () {
+    const window = liveWindow();
+    if (window === null) return;
+    const [x, y] = window.getPosition();
+    const next = resolvePosition({ x: x ?? 0, y: y ?? 0 }, windowSize);
+    if (next.x !== x || next.y !== y) {
+      window.setPosition(next.x, next.y);
+      yield* persistPosition(next);
+    }
+  });
+
+  const setPreferences = Effect.fn("desktop.sidekick.setPreferences")(function* (
+    patch: DesktopSidekickPreferencesPatch,
+  ) {
+    const change = yield* appSettings.setSidekickPreferences(patch);
+    const next = toSidekickPreferences(change.settings);
+    if (change.changed) {
+      yield* electronWindow.sendAll(SIDEKICK_PREFERENCES_CHANGED_CHANNEL, next);
+      yield* sync;
+    }
+    return next;
+  });
+
+  const runSetPreferences = (patch: DesktopSidekickPreferencesPatch) =>
+    runFork(
+      setPreferences(patch).pipe(
+        Effect.catch((error) =>
+          logWarning("could not update sidekick preferences", { message: error.message }),
+        ),
+      ),
+    );
+
+  const showContextMenu = Effect.gen(function* () {
+    const window = liveWindow();
+    if (window === null) return;
+    const { state } = yield* Ref.get(statusRef);
+    const settings = yield* appSettings.get;
+    const idle = state === "waiting" || state === "sleeping" || state === "offline";
+    yield* electronMenu.popupTemplate({
+      window,
+      template: [
+        {
+          label: idle ? "Open CKcode" : "Open Thread",
+          click: () => runFork(activate),
+        },
+        { type: "separator" },
+        {
+          label: "Size",
+          submenu: (Object.keys(SIZE_LABELS) as DesktopSidekickSize[]).map((size) => ({
+            label: SIZE_LABELS[size],
+            type: "radio" as const,
+            checked: settings.sidekickSize === size,
+            click: () => runSetPreferences({ size }),
+          })),
+        },
+        {
+          label: "Reset Position",
+          click: () =>
+            runFork(
+              Effect.gen(function* () {
+                const current = liveWindow();
+                if (current === null) return;
+                const next = resolvePosition(null, windowSize);
+                current.setPosition(next.x, next.y);
+                yield* persistPosition(null);
+              }),
+            ),
+        },
+        { type: "separator" },
+        { label: "Hide Sidekick", click: () => runSetPreferences({ enabled: false }) },
+      ],
+    });
+  });
+
+  // The renderer picks which thread to open; the desktop only reveals it.
+  const activate = desktopWindow
+    .dispatchMenuAction(DESKTOP_SIDEKICK_ACTIVATE_MENU_ACTION, { reveal: true })
+    .pipe(
+      Effect.catch((error) =>
+        logWarning("could not activate from sidekick", { message: error.message }),
+      ),
+    );
+
+  const handleInput = (event: Electron.IpcMainEvent, raw: unknown) => {
+    const window = liveWindow();
+    if (window === null || event.sender !== window.webContents) return;
+    const decoded = decodeWindowInput(raw);
+    if (Option.isNone(decoded)) return;
+    const input = decoded.value;
+    switch (input.type) {
+      case "drag-start": {
+        const [x, y] = window.getPosition();
+        dragOrigin = { x: x ?? 0, y: y ?? 0 };
+        return;
+      }
+      case "drag-move": {
+        if (dragOrigin === null) return;
+        window.setPosition(
+          Math.round(dragOrigin.x + input.dx),
+          Math.round(dragOrigin.y + input.dy),
+        );
+        return;
+      }
+      case "drag-end": {
+        dragOrigin = null;
+        runFork(reclamp.pipe(Effect.andThen(persistCurrentPosition)));
+        return;
+      }
+      case "click":
+        runFork(activate);
+        return;
+      case "context-menu":
+        runFork(showContextMenu);
+        return;
+    }
+  };
+
+  const persistCurrentPosition = Effect.gen(function* () {
+    const window = liveWindow();
+    if (window === null) return;
+    const [x, y] = window.getPosition();
+    yield* persistPosition({ x: x ?? 0, y: y ?? 0 });
+  });
+
+  const createWindow = Effect.fn("desktop.sidekick.createWindow")(function* (
+    settings: DesktopAppSettings.DesktopSettings,
+  ) {
+    const htmlPath = yield* assets
+      .resolveResourcePath("sidekick/index.html")
+      .pipe(
+        Effect.catch((error) =>
+          logWarning("could not probe sidekick page", { message: error.message }).pipe(
+            Effect.as(Option.none<string>()),
+          ),
+        ),
+      );
+    if (Option.isNone(htmlPath)) {
+      yield* logWarning("sidekick page is missing from the desktop resources");
+      return;
+    }
+    const size = SIDEKICK_SIZE_PX[settings.sidekickSize];
+    const position = resolvePosition(settings.sidekickPosition, size);
+    const window = new Electron.BrowserWindow({
+      ...position,
+      width: size,
+      height: size,
+      title: "Sidekick",
+      show: false,
+      frame: false,
+      transparent: true,
+      hasShadow: false,
+      backgroundColor: "#00000000",
+      resizable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      // Never steal focus from whatever the user is typing into.
+      focusable: false,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      ...(environment.platform === "darwin" ? { type: "panel" as const } : {}),
+      webPreferences: {
+        preload: environment.path.join(environment.dirname, "sidekick-preload.cjs"),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    });
+    window.setAlwaysOnTop(true, environment.platform === "darwin" ? "floating" : "normal");
+    if (environment.platform === "darwin") {
+      window.setVisibleOnAllWorkspaces(true, {
+        visibleOnFullScreen: true,
+        // Electron otherwise temporarily transforms the entire app into a
+        // UIElement process, which removes the owning app from the Dock.
+        skipTransformProcessType: true,
+      });
+    }
+    window.once("ready-to-show", () => {
+      if (!window.isDestroyed()) window.showInactive();
+    });
+    window.webContents.on("did-finish-load", () => runFork(sendStatus));
+    window.once("closed", () => {
+      if (sidekickWindow === window) sidekickWindow = null;
+    });
+    sidekickWindow = window;
+    windowSize = size;
+    void window.loadFile(htmlPath.value).catch(() => undefined);
+  });
+
+  /** Brings the window in line with the persisted preferences. */
+  const sync: Effect.Effect<void> = Effect.gen(function* () {
+    if (!(yield* Ref.get(startedRef))) return;
+    const settings = yield* appSettings.get;
+    const window = liveWindow();
+    if (!settings.sidekickEnabled) {
+      window?.close();
+      return;
+    }
+    if (window === null) {
+      yield* createWindow(settings);
+      return;
+    }
+    const size = SIDEKICK_SIZE_PX[settings.sidekickSize];
+    if (size === windowSize) return;
+    const [x, y] = window.getPosition();
+    const next = resolvePosition(
+      resizeSidekickPosition({ x: x ?? 0, y: y ?? 0 }, windowSize, size),
+      size,
+    );
+    windowSize = size;
+    window.setBounds({ ...next, width: size, height: size });
+    yield* persistPosition(next);
+  }).pipe(Effect.withSpan("desktop.sidekick.sync"));
+
+  const start = Effect.gen(function* () {
+    if (yield* Ref.getAndSet(startedRef, true)) return;
+    const onDisplaysChanged = () => runFork(reclamp);
+    Electron.ipcMain.on(SIDEKICK_WINDOW_INPUT_CHANNEL, handleInput);
+    Electron.screen.on("display-removed", onDisplaysChanged);
+    Electron.screen.on("display-metrics-changed", onDisplaysChanged);
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        Electron.ipcMain.removeListener(SIDEKICK_WINDOW_INPUT_CHANNEL, handleInput);
+        Electron.screen.removeListener("display-removed", onDisplaysChanged);
+        Electron.screen.removeListener("display-metrics-changed", onDisplaysChanged);
+        liveWindow()?.destroy();
+      }),
+    );
+    // Outside macOS the app quits when its last window closes. The sidekick
+    // must not keep it alive, so it leaves when it is the only window left.
+    if (environment.platform !== "darwin") {
+      yield* electronApp.on(
+        "browser-window-created",
+        (_event: Electron.Event, created: Electron.BrowserWindow) => {
+          created.once("closed", () => {
+            const window = liveWindow();
+            if (window === null || window === created) return;
+            const others = Electron.BrowserWindow.getAllWindows().filter(
+              (candidate) => candidate !== window && !candidate.isDestroyed(),
+            );
+            if (others.length === 0) window.destroy();
+          });
+        },
+      );
+    }
+    yield* sync;
+  }).pipe(Effect.withSpan("desktop.sidekick.start"));
 
   return DesktopSidekick.of({
-    status: Ref.get(statusRef),
-    setStatus: (status) => Ref.set(statusRef, status),
-    preferences,
-    setPreferences: Effect.fn("desktop.sidekick.setPreferences")(function* (patch) {
-      const change = yield* appSettings.setSidekickPreferences(patch);
-      const next = toSidekickPreferences(change.settings);
-      if (change.changed) {
-        yield* electronWindow.sendAll(SIDEKICK_PREFERENCES_CHANGED_CHANNEL, next);
-      }
-      return next;
-    }),
+    start,
+    setStatus: (status) =>
+      Ref.getAndSet(statusRef, status).pipe(
+        Effect.flatMap((previous) =>
+          previous.state === status.state &&
+          previous.badgeCount === status.badgeCount &&
+          previous.tooltip === status.tooltip
+            ? Effect.void
+            : sendStatus,
+        ),
+      ),
+    preferences: appSettings.get.pipe(Effect.map(toSidekickPreferences)),
+    setPreferences,
   });
 });
 

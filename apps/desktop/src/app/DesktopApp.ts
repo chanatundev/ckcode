@@ -15,6 +15,7 @@ import { installDesktopIpcHandlers } from "../ipc/DesktopIpcHandlers.ts";
 import * as DesktopAppActivation from "./DesktopAppActivation.ts";
 import * as DesktopAppIdentity from "./DesktopAppIdentity.ts";
 import * as DesktopClerk from "./DesktopClerk.ts";
+import * as DesktopSidekick from "../sidekick/DesktopSidekick.ts";
 import * as DesktopApplicationMenu from "../window/DesktopApplicationMenu.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
@@ -164,6 +165,7 @@ const bootstrap = Effect.gen(function* () {
   const desktopWindow = yield* DesktopWindow.DesktopWindow;
   const snapShot = yield* DesktopSnapShot.DesktopSnapShot;
   const appActivation = yield* DesktopAppActivation.DesktopAppActivation;
+  const sidekick = yield* DesktopSidekick.DesktopSidekick;
   yield* logBootstrapInfo("bootstrap start");
 
   const settings = yield* desktopSettings.get;
@@ -179,6 +181,7 @@ const bootstrap = Effect.gen(function* () {
   });
   yield* installDesktopIpcHandlers();
   yield* logBootstrapInfo("bootstrap ipc handlers registered");
+  yield* sidekick.start;
 
   yield* snapShot.initialize;
 

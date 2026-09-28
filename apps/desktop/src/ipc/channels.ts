@@ -119,3 +119,5 @@ export const SET_SIDEKICK_STATUS_CHANNEL = "desktop:set-sidekick-status";
 export const GET_SIDEKICK_PREFERENCES_CHANNEL = "desktop:get-sidekick-preferences";
 export const SET_SIDEKICK_PREFERENCES_CHANNEL = "desktop:set-sidekick-preferences";
 export const SIDEKICK_PREFERENCES_CHANGED_CHANNEL = "desktop:sidekick-preferences-changed";
+export const SIDEKICK_WINDOW_STATUS_CHANNEL = "desktop:sidekick-window-status";
+export const SIDEKICK_WINDOW_INPUT_CHANNEL = "desktop:sidekick-window-input";
