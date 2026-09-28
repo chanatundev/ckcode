@@ -1,5 +1,6 @@
 import {
   DESKTOP_SIDEKICK_ACTIVATE_MENU_ACTION,
+  DESKTOP_SIDEKICK_SIZE_LABELS,
   type DesktopSidekickPreferences,
   type DesktopSidekickPreferencesPatch,
   type DesktopSidekickSize,
@@ -53,12 +54,6 @@ export const toSidekickPreferences = (
   enabled: settings.sidekickEnabled,
   size: settings.sidekickSize,
 });
-
-const SIZE_LABELS: Record<DesktopSidekickSize, string> = {
-  small: "Small",
-  medium: "Medium",
-  large: "Large",
-};
 
 const { logWarning } = makeComponentLogger("desktop-sidekick");
 const decodeWindowInput = Schema.decodeUnknownOption(SidekickWindowInput);
@@ -207,12 +202,14 @@ export const make = Effect.gen(function* () {
         { type: "separator" },
         {
           label: "Size",
-          submenu: (Object.keys(SIZE_LABELS) as DesktopSidekickSize[]).map((size) => ({
-            label: SIZE_LABELS[size],
-            type: "radio" as const,
-            checked: settings.sidekickSize === size,
-            click: () => runSetPreferences({ size }),
-          })),
+          submenu: (Object.keys(DESKTOP_SIDEKICK_SIZE_LABELS) as DesktopSidekickSize[]).map(
+            (size) => ({
+              label: DESKTOP_SIDEKICK_SIZE_LABELS[size],
+              type: "radio" as const,
+              checked: settings.sidekickSize === size,
+              click: () => runSetPreferences({ size }),
+            }),
+          ),
         },
         {
           label: "Reset Position",

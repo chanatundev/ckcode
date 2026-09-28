@@ -1137,6 +1137,11 @@ export type DesktopSidekickState = typeof DesktopSidekickStateSchema.Type;
 
 export const DesktopSidekickSizeSchema = Schema.Literals(["small", "medium", "large"]);
 export type DesktopSidekickSize = typeof DesktopSidekickSizeSchema.Type;
+export const DESKTOP_SIDEKICK_SIZE_LABELS: Record<DesktopSidekickSize, string> = {
+  small: "Small",
+  medium: "Medium",
+  large: "Large",
+};
 
 export const DesktopSidekickStatusSchema = Schema.Struct({
   state: DesktopSidekickStateSchema,
@@ -1152,7 +1157,8 @@ export const DesktopSidekickPreferencesSchema = Schema.Struct({
 export type DesktopSidekickPreferences = typeof DesktopSidekickPreferencesSchema.Type;
 
 export const DesktopSidekickPreferencesPatchSchema = Schema.Struct({
-  enabled: Schema.optionalKey(Schema.Boolean),
+  /** "toggle" flips the stored value atomically in the desktop process. */
+  enabled: Schema.optionalKey(Schema.Union([Schema.Boolean, Schema.Literal("toggle")])),
   size: Schema.optionalKey(DesktopSidekickSizeSchema),
 });
 export type DesktopSidekickPreferencesPatch = typeof DesktopSidekickPreferencesPatchSchema.Type;

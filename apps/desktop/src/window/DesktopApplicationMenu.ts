@@ -62,8 +62,7 @@ const zoomMainWindow = Effect.fn("desktop.menu.zoomMainWindow")(function* (
 
 const toggleSidekick = Effect.gen(function* () {
   const sidekick = yield* DesktopSidekick.DesktopSidekick;
-  const { enabled } = yield* sidekick.preferences;
-  yield* sidekick.setPreferences({ enabled: !enabled });
+  yield* sidekick.setPreferences({ enabled: "toggle" });
 }).pipe(Effect.withSpan("desktop.menu.toggleSidekick"));
 
 const checkForUpdatesFromMenu = Effect.gen(function* () {

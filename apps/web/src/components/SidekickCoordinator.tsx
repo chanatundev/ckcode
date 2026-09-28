@@ -16,6 +16,7 @@ import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { useEffect, useRef, useState } from "react";
 
 import { environmentCatalog } from "../connection/catalog";
+import { useDesktopSidekickPreferences } from "../lib/desktopSidekick";
 import {
   pickSidekickTarget,
   resolveSidekickSnapshot,
@@ -46,28 +47,8 @@ const sidekickEnvironmentsAtom = Atom.make((get): SidekickEnvironmentInput[] =>
 
 /** Mirrors the desktop sidekick preference; web builds never render anything. */
 export function SidekickCoordinator() {
-  const [enabled, setEnabled] = useState(false);
-
-  useEffect(() => {
-    const bridge = window.desktopBridge;
-    if (!bridge?.getSidekickPreferences || !bridge.setSidekickStatus) return;
-    let cancelled = false;
-    bridge
-      .getSidekickPreferences()
-      .then((preferences) => {
-        if (!cancelled) setEnabled(preferences.enabled);
-      })
-      .catch(() => undefined);
-    const unsubscribe = bridge.onSidekickPreferences?.((preferences) =>
-      setEnabled(preferences.enabled),
-    );
-    return () => {
-      cancelled = true;
-      unsubscribe?.();
-    };
-  }, []);
-
-  return enabled ? <SidekickStatusPublisher /> : null;
+  const preferences = useDesktopSidekickPreferences();
+  return preferences?.enabled ? <SidekickStatusPublisher /> : null;
 }
 
 function SidekickStatusPublisher() {

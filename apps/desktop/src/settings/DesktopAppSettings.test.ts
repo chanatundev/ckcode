@@ -361,6 +361,24 @@ describe("DesktopSettings", () => {
     ),
   );
 
+  it.effect("toggles the sidekick against the stored value", () =>
+    withSettings(
+      Effect.gen(function* () {
+        const settings = yield* DesktopAppSettings.DesktopAppSettings;
+        const [first, second] = yield* Effect.all(
+          [
+            settings.setSidekickPreferences({ enabled: "toggle" }),
+            settings.setSidekickPreferences({ enabled: "toggle" }),
+          ],
+          { concurrency: "unbounded" },
+        );
+        // Serialized, so one toggle sees the other's write: exactly one turned it on.
+        assert.notEqual(first.settings.sidekickEnabled, second.settings.sidekickEnabled);
+        assert.isFalse((yield* settings.load).sidekickEnabled);
+      }),
+    ),
+  );
+
   it.effect("drops invalid persisted sidekick size and position", () =>
     withSettings(
       Effect.gen(function* () {

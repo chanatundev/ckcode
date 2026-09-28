@@ -311,7 +311,10 @@ function setSidekickPreferences(
   settings: DesktopSettings,
   patch: DesktopSidekickPreferencesPatch,
 ): DesktopSettings {
-  const enabled = patch.enabled ?? settings.sidekickEnabled;
+  const enabled =
+    patch.enabled === "toggle"
+      ? !settings.sidekickEnabled
+      : (patch.enabled ?? settings.sidekickEnabled);
   const size = patch.size ?? settings.sidekickSize;
   return settings.sidekickEnabled === enabled && settings.sidekickSize === size
     ? settings
