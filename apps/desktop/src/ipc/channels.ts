@@ -122,3 +122,6 @@ export const SIDEKICK_PREFERENCES_CHANGED_CHANNEL = "desktop:sidekick-preference
 export const SIDEKICK_WINDOW_STATUS_CHANNEL = "desktop:sidekick-window-status";
 export const SIDEKICK_WINDOW_INPUT_CHANNEL = "desktop:sidekick-window-input";
 export const SIDEKICK_WINDOW_LAYOUT_CHANNEL = "desktop:sidekick-window-layout";
+
+export const RECEIVE_PROVIDER_AUTH_CALLBACK_CHANNEL = "desktop:receive-provider-auth-callback";
+export const CANCEL_PROVIDER_AUTH_CALLBACK_CHANNEL = "desktop:cancel-provider-auth-callback";

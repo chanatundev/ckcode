@@ -1,3 +1,4 @@
+import { ChatGptUsageLimitNotice } from "./ChatGptUsageLimitNotice";
 import type { ComposerTextPaste } from "../../native/T3ComposerEditor.types";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { useAtomValue } from "@effect/atom-react";
@@ -510,11 +511,9 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         if (input.mode === "handoff") {
           const alternatives = modelOptions.filter(
             (option) =>
-              !option.isUnavailable &&
-              option.providerDriver !== selectedProviderStatus?.driver,
+              !option.isUnavailable && option.providerDriver !== selectedProviderStatus?.driver,
           );
-          const target =
-            alternatives.find((option) => option.isDefault) ?? alternatives[0] ?? null;
+          const target = alternatives.find((option) => option.isDefault) ?? alternatives[0] ?? null;
           if (!target) {
             Alert.alert(
               "No other provider is ready",
@@ -524,10 +523,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           }
           modelSelection = target.selection;
         } else if (modelUnavailable) {
-          Alert.alert(
-            "Current model unavailable",
-            "Choose a ready model before creating a fork.",
-          );
+          Alert.alert("Current model unavailable", "Choose a ready model before creating a fork.");
           return false;
         }
 
@@ -553,7 +549,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
 
         const transcript = props.workflowHistory
           .slice(-16)
-          .map((message) => `${message.role === "user" ? "User" : "Assistant"}: ${message.text.slice(0, 1_500)}`)
+          .map(
+            (message) =>
+              `${message.role === "user" ? "User" : "Assistant"}: ${message.text.slice(0, 1_500)}`,
+          )
           .join("\n\n")
           .slice(-10_000);
         const workflowPrompt = [
@@ -562,7 +561,9 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           "Recent conversation history:",
           transcript || "No text history is available.",
           "",
-          ...(props.selectedThread.goal ? [`Persistent thread goal: ${props.selectedThread.goal}`, ""] : []),
+          ...(props.selectedThread.goal
+            ? [`Persistent thread goal: ${props.selectedThread.goal}`, ""]
+            : []),
           "Use the history as context. Inspect the current project files before changing anything.",
           "",
           "Task:",
@@ -570,10 +571,11 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         ].join("\n");
         const createdAt = new Date().toISOString();
         const threadId = ThreadId.make(uuidv4());
-        const title = `${input.mode === "handoff" ? "Handoff" : "Fork"}: ${props.selectedThread.title}`.slice(
-          0,
-          160,
-        );
+        const title =
+          `${input.mode === "handoff" ? "Handoff" : "Fork"}: ${props.selectedThread.title}`.slice(
+            0,
+            160,
+          );
         const createResult = await createThread({
           environmentId: props.environmentId,
           input: {
@@ -859,6 +861,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         className="relative w-full self-center"
         style={{ maxWidth: props.contentMaxWidth }}
       >
+        <ChatGptUsageLimitNotice
+          environmentId={props.environmentId}
+          thread={props.selectedThread}
+        />
         {!voiceInput.isBusy &&
         composerMenu.trigger &&
         (composerMenu.items.length > 0 || composerMenu.trigger.kind === "pull-request") ? (
@@ -885,7 +891,11 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                 ? "assertive"
                 : "polite"
             }
-            className="px-3 py-2 text-xs text-foreground"
+            className={
+              selectedProviderStatus.compatibilityAdvisory.status === "broken"
+                ? "bg-danger px-3 py-2 text-xs text-danger-foreground"
+                : "px-3 py-2 text-xs text-foreground"
+            }
           >
             {selectedProviderStatus.compatibilityAdvisory.message}
           </Text>
