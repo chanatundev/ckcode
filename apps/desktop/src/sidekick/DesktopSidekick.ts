@@ -1,11 +1,13 @@
 import {
   DESKTOP_SIDEKICK_ACTIVATE_MENU_ACTION,
   DESKTOP_SIDEKICK_SIZE_LABELS,
+  DESKTOP_SIDEKICK_THREADS_LABELS,
   desktopSidekickOpenThreadMenuAction,
   type DesktopSidekickPreferences,
   type DesktopSidekickPreferencesPatch,
   type DesktopSidekickSize,
   type DesktopSidekickStatus,
+  type DesktopSidekickThreads,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -27,6 +29,7 @@ import {
   SIDEKICK_PREFERENCES_CHANGED_CHANNEL,
   SIDEKICK_WINDOW_INPUT_CHANNEL,
   SIDEKICK_WINDOW_LAYOUT_CHANNEL,
+  SIDEKICK_WINDOW_PINNED_CHANNEL,
   SIDEKICK_WINDOW_STATUS_CHANNEL,
 } from "../ipc/channels.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
@@ -62,6 +65,7 @@ export const toSidekickPreferences = (
 ): DesktopSidekickPreferences => ({
   enabled: settings.sidekickEnabled,
   size: settings.sidekickSize,
+  threads: settings.sidekickThreads,
 });
 
 const { logWarning } = makeComponentLogger("desktop-sidekick");
@@ -194,6 +198,14 @@ export const make = Effect.gen(function* () {
     window.webContents.send(SIDEKICK_WINDOW_STATUS_CHANNEL, yield* Ref.get(statusRef));
   });
 
+  /** The page owns when the list opens; it only needs to know whether it stays open. */
+  const sendThreadsMode = Effect.gen(function* () {
+    const window = liveWindow();
+    if (window === null || window.webContents.isLoadingMainFrame()) return;
+    const { sidekickThreads } = yield* appSettings.get;
+    window.webContents.send(SIDEKICK_WINDOW_PINNED_CHANNEL, sidekickThreads === "always");
+  });
+
   /** Moves the window back inside a display, e.g. after a monitor is unplugged. */
   const reclamp = Effect.gen(function* () {
     const window = liveWindow();
@@ -278,6 +290,17 @@ export const make = Effect.gen(function* () {
           ),
         },
         {
+          label: "Show Threads",
+          submenu: (Object.keys(DESKTOP_SIDEKICK_THREADS_LABELS) as DesktopSidekickThreads[]).map(
+            (threads) => ({
+              label: DESKTOP_SIDEKICK_THREADS_LABELS[threads],
+              type: "radio" as const,
+              checked: settings.sidekickThreads === threads,
+              click: () => runSetPreferences({ threads }),
+            }),
+          ),
+        },
+        {
           label: "Reset Position",
           click: () =>
             runFork(
@@ -315,8 +338,6 @@ export const make = Effect.gen(function* () {
           session.environmentId === thread.environmentId && session.threadId === thread.threadId,
       );
       if (!listed) return;
-      const window = liveWindow();
-      if (window !== null) collapse(window);
       yield* desktopWindow
         .dispatchMenuAction(desktopSidekickOpenThreadMenuAction(thread), { reveal: true })
         .pipe(
@@ -382,8 +403,7 @@ export const make = Effect.gen(function* () {
   const persistCurrentPosition = Effect.gen(function* () {
     const window = liveWindow();
     if (window === null) return;
-    const [x, y] = window.getPosition();
-    yield* persistPosition({ x: x ?? 0, y: y ?? 0 });
+    yield* persistPosition(spritePosition(window));
   });
 
   const createWindow = Effect.fn("desktop.sidekick.createWindow")(function* (
@@ -445,7 +465,9 @@ export const make = Effect.gen(function* () {
     window.once("ready-to-show", () => {
       if (!window.isDestroyed()) window.showInactive();
     });
-    window.webContents.on("did-finish-load", () => runFork(sendStatus));
+    window.webContents.on("did-finish-load", () =>
+      runFork(sendStatus.pipe(Effect.andThen(sendThreadsMode))),
+    );
     window.once("closed", () => {
       if (sidekickWindow === window) sidekickWindow = null;
     });
@@ -474,6 +496,7 @@ export const make = Effect.gen(function* () {
       yield* createWindow(settings);
       return;
     }
+    yield* sendThreadsMode;
     const size = SIDEKICK_SIZE_PX[settings.sidekickSize];
     if (size === windowSize) return;
     collapse(window);

@@ -1,5 +1,6 @@
 import {
   DESKTOP_SIDEKICK_SIZE_LABELS,
+  DESKTOP_SIDEKICK_THREADS_LABELS,
   type DesktopSidekickPreferencesPatch,
 } from "@t3tools/contracts";
 
@@ -50,6 +51,29 @@ export function SidekickSettings() {
             </SelectTrigger>
             <SelectPopup align="end" alignItemWithTrigger={false}>
               {Object.entries(DESKTOP_SIDEKICK_SIZE_LABELS).map(([value, label]) => (
+                <SelectItem hideIndicator key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        }
+      />
+      <SettingsRow
+        {...searchableSetting("sidekick-threads")}
+        description="When the sidekick lists the threads that need you or are working."
+        control={
+          <Select
+            value={preferences.threads}
+            onValueChange={(value) => {
+              if (value === "hover" || value === "always") update({ threads: value });
+            }}
+          >
+            <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Sidekick threads">
+              <SelectValue>{DESKTOP_SIDEKICK_THREADS_LABELS[preferences.threads]}</SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="end" alignItemWithTrigger={false}>
+              {Object.entries(DESKTOP_SIDEKICK_THREADS_LABELS).map(([value, label]) => (
                 <SelectItem hideIndicator key={value} value={value}>
                   {label}
                 </SelectItem>

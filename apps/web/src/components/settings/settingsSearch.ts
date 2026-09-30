@@ -325,6 +325,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     desktopOnly: true,
   },
   {
+    id: "sidekick-threads",
+    title: "Sidekick threads",
+    to: "/settings/general",
+    searchTerms: ["pet buddy companion hover always pinned list sessions dialogue"],
+    desktopOnly: true,
+  },
+  {
     id: "time-format",
     title: "Time format",
     to: "/settings/general",

@@ -5,6 +5,7 @@ import { ipcRenderer } from "electron";
 import {
   SIDEKICK_WINDOW_INPUT_CHANNEL,
   SIDEKICK_WINDOW_LAYOUT_CHANNEL,
+  SIDEKICK_WINDOW_PINNED_CHANNEL,
   SIDEKICK_WINDOW_STATUS_CHANNEL,
 } from "./ipc/channels.ts";
 import type { SidekickWindowInput, SidekickWindowLayout } from "./sidekick/SidekickWindowInput.ts";
@@ -17,20 +18,25 @@ const HOVER_DELAY_MS = 150;
 const LEAVE_GRACE_MS = 200;
 
 const STATUS_LABELS: Record<DesktopSidekickSession["state"], string> = {
-  approval: "Approval",
-  input: "Needs input",
+  approval: "Pending Approval",
+  input: "Awaiting Input",
   error: "Failed",
-  plan: "Plan ready",
+  plan: "Plan Ready",
   working: "Working",
   success: "Completed",
 };
 
 let latestStatus: DesktopSidekickStatus | null = null;
 let hovering = false;
+// "Always" thread list: stays open whenever there is something to list.
+let pinned = false;
+let dragging = false;
 let hoverTimer: ReturnType<typeof setTimeout> | undefined;
 let leaveTimer: ReturnType<typeof setTimeout> | undefined;
 
 const send = (input: SidekickWindowInput) => ipcRenderer.send(SIDEKICK_WINDOW_INPUT_CHANNEL, input);
+
+const listVisible = () => (pinned || hovering) && !dragging;
 
 /** Asks the main process to fit the rendered list, or to collapse when there is none. */
 function requestExpand() {
@@ -63,6 +69,7 @@ function sessionBox(session: DesktopSidekickSession) {
   box.append(title, status);
   box.addEventListener("click", () => {
     stopHovering();
+    if (!pinned) send({ type: "collapse" });
     send({
       type: "open-thread",
       environmentId: session.environmentId,
@@ -97,13 +104,17 @@ function render() {
     }
     panel.replaceChildren(...boxes);
   }
-  if (hovering) requestExpand();
+  if (listVisible()) requestExpand();
 }
 
 function applyLayout(layout: SidekickWindowLayout) {
   const body = document.body;
   body.classList.toggle("expanded", layout.expanded);
-  if (!layout.expanded) return;
+  if (!layout.expanded) {
+    // The main process collapses before moving or resizing the sprite; reopen once it settles.
+    if (listVisible()) requestExpand();
+    return;
+  }
   body.style.setProperty("--size", `${layout.size}px`);
   body.style.setProperty("--gap", `${layout.gap}px`);
   body.classList.toggle("above", layout.placement === "above");
@@ -121,6 +132,12 @@ ipcRenderer.on(SIDEKICK_WINDOW_LAYOUT_CHANNEL, (_event, layout: SidekickWindowLa
   applyLayout(layout);
 });
 
+ipcRenderer.on(SIDEKICK_WINDOW_PINNED_CHANNEL, (_event, next: boolean) => {
+  pinned = next === true;
+  if (listVisible()) requestExpand();
+  else if (!hovering) send({ type: "collapse" });
+});
+
 window.addEventListener("DOMContentLoaded", () => {
   render();
   const sprite = document.getElementById("sprite");
@@ -134,12 +151,12 @@ window.addEventListener("DOMContentLoaded", () => {
     clearTimeout(leaveTimer);
     leaveTimer = setTimeout(() => {
       hovering = false;
-      send({ type: "collapse" });
+      if (!pinned) send({ type: "collapse" });
     }, LEAVE_GRACE_MS);
   };
   sprite.addEventListener("pointerenter", () => {
     clearTimeout(leaveTimer);
-    if (hovering || drag !== null) return;
+    if (hovering || pinned || drag !== null) return;
     hoverTimer = setTimeout(() => {
       hovering = true;
       requestExpand();
@@ -167,6 +184,7 @@ window.addEventListener("DOMContentLoaded", () => {
     if (!drag.moved) {
       if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
       drag.moved = true;
+      dragging = true;
       stopHovering();
       document.body.classList.add("dragging");
       send({ type: "drag-start" });
@@ -177,9 +195,12 @@ window.addEventListener("DOMContentLoaded", () => {
     if (drag === null || event.pointerId !== drag.pointerId) return;
     const { moved } = drag;
     drag = null;
+    dragging = false;
     document.body.classList.remove("dragging");
-    if (moved) send({ type: "drag-end" });
-    else if (!cancelled) send({ type: "click" });
+    if (moved) {
+      send({ type: "drag-end" });
+      if (listVisible()) requestExpand();
+    } else if (!cancelled) send({ type: "click" });
   };
   sprite.addEventListener("pointerup", (event) => endDrag(event, false));
   sprite.addEventListener("pointercancel", (event) => endDrag(event, true));

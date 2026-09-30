@@ -1169,9 +1169,18 @@ export const DesktopSidekickStatusSchema = Schema.Struct({
 });
 export type DesktopSidekickStatus = typeof DesktopSidekickStatusSchema.Type;
 
+/** When the sidekick lists its active threads. */
+export const DesktopSidekickThreadsSchema = Schema.Literals(["hover", "always"]);
+export type DesktopSidekickThreads = typeof DesktopSidekickThreadsSchema.Type;
+export const DESKTOP_SIDEKICK_THREADS_LABELS: Record<DesktopSidekickThreads, string> = {
+  hover: "On Hover",
+  always: "Always",
+};
+
 export const DesktopSidekickPreferencesSchema = Schema.Struct({
   enabled: Schema.Boolean,
   size: DesktopSidekickSizeSchema,
+  threads: DesktopSidekickThreadsSchema,
 });
 export type DesktopSidekickPreferences = typeof DesktopSidekickPreferencesSchema.Type;
 
@@ -1179,6 +1188,7 @@ export const DesktopSidekickPreferencesPatchSchema = Schema.Struct({
   /** "toggle" flips the stored value atomically in the desktop process. */
   enabled: Schema.optionalKey(Schema.Union([Schema.Boolean, Schema.Literal("toggle")])),
   size: Schema.optionalKey(DesktopSidekickSizeSchema),
+  threads: Schema.optionalKey(DesktopSidekickThreadsSchema),
 });
 export type DesktopSidekickPreferencesPatch = typeof DesktopSidekickPreferencesPatchSchema.Type;
 

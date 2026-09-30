@@ -93,7 +93,7 @@ const makeDesktopWindowLayer = (selectedAction: Deferred.Deferred<string>) =>
 const sidekickLayer = Layer.succeed(DesktopSidekick.DesktopSidekick, {
   start: Effect.void,
   setStatus: () => Effect.void,
-  preferences: Effect.succeed({ enabled: false, size: "medium" }),
+  preferences: Effect.succeed({ enabled: false, size: "medium", threads: "hover" }),
   setPreferences: () => Effect.die("unexpected sidekick preferences update"),
 } satisfies DesktopSidekick.DesktopSidekick["Service"]);
 

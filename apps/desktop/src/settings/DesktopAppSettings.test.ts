@@ -28,6 +28,7 @@ const DesktopSettingsPatch = Schema.Struct({
   serverExposureMode: Schema.optionalKey(Schema.Literals(["local-only", "network-accessible"])),
   sidekickEnabled: Schema.optionalKey(Schema.Boolean),
   sidekickSize: Schema.optionalKey(Schema.String),
+  sidekickThreads: Schema.optionalKey(Schema.String),
   sidekickPosition: Schema.optionalKey(
     Schema.NullOr(Schema.Struct({ x: Schema.Number, y: Schema.Number })),
   ),
@@ -140,6 +141,7 @@ describe("DesktopSettings", () => {
           mainWindowMaximized: false,
           sidekickEnabled: false,
           sidekickSize: "medium",
+          sidekickThreads: "hover",
           sidekickPosition: null,
           serverExposureMode: "network-accessible",
           tailscaleServeEnabled: true,
@@ -240,6 +242,7 @@ describe("DesktopSettings", () => {
           mainWindowMaximized: false,
           sidekickEnabled: false,
           sidekickSize: "medium",
+          sidekickThreads: "hover",
           sidekickPosition: null,
           serverExposureMode: "network-accessible",
           tailscaleServeEnabled: true,
@@ -298,6 +301,7 @@ describe("DesktopSettings", () => {
             mainWindowMaximized: false,
             sidekickEnabled: false,
             sidekickSize: "medium",
+            sidekickThreads: "hover",
             sidekickPosition: null,
             serverExposureMode: "network-accessible",
             tailscaleServeEnabled: true,
@@ -341,7 +345,7 @@ describe("DesktopSettings", () => {
 
         assert.isTrue((yield* settings.setSidekickPreferences({ enabled: true })).changed);
         assert.isFalse((yield* settings.setSidekickPreferences({ size: "medium" })).changed);
-        yield* settings.setSidekickPreferences({ size: "large" });
+        yield* settings.setSidekickPreferences({ size: "large", threads: "always" });
         yield* settings.setSidekickPosition({ x: -300, y: 120 });
         assert.isFalse((yield* settings.setSidekickPosition({ x: -300, y: 120 })).changed);
 
@@ -351,10 +355,15 @@ describe("DesktopSettings", () => {
         assert.deepEqual(persisted, {
           sidekickEnabled: true,
           sidekickSize: "large",
+          sidekickThreads: "always",
           sidekickPosition: { x: -300, y: 120 },
         } satisfies typeof DesktopSettingsPatch.Type);
 
-        yield* settings.setSidekickPreferences({ enabled: false, size: "medium" });
+        yield* settings.setSidekickPreferences({
+          enabled: false,
+          size: "medium",
+          threads: "hover",
+        });
         yield* settings.setSidekickPosition(null);
         assert.deepEqual(yield* settings.load, DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS);
       }),
@@ -379,18 +388,20 @@ describe("DesktopSettings", () => {
     ),
   );
 
-  it.effect("drops invalid persisted sidekick size and position", () =>
+  it.effect("drops invalid persisted sidekick size, thread list mode and position", () =>
     withSettings(
       Effect.gen(function* () {
         const settings = yield* DesktopAppSettings.DesktopAppSettings;
         yield* writeSettingsPatch({
           sidekickEnabled: true,
           sidekickSize: "huge",
+          sidekickThreads: "sometimes",
           sidekickPosition: { x: 1.5, y: 20 },
         });
         const loaded = yield* settings.load;
         assert.isTrue(loaded.sidekickEnabled);
         assert.equal(loaded.sidekickSize, "medium");
+        assert.equal(loaded.sidekickThreads, "hover");
         assert.isNull(loaded.sidekickPosition);
       }),
     ),
@@ -412,6 +423,7 @@ describe("DesktopSettings", () => {
           mainWindowMaximized: false,
           sidekickEnabled: false,
           sidekickSize: "medium",
+          sidekickThreads: "hover",
           sidekickPosition: null,
           serverExposureMode: "local-only",
           tailscaleServeEnabled: true,

@@ -1,9 +1,11 @@
 import {
   DesktopServerExposureModeSchema,
   DesktopSidekickSizeSchema,
+  DesktopSidekickThreadsSchema,
   type DesktopServerExposureMode,
   type DesktopSidekickPreferencesPatch,
   type DesktopSidekickSize,
+  type DesktopSidekickThreads,
 } from "@t3tools/contracts";
 import { fromLenientJson } from "@t3tools/shared/schemaJson";
 import * as Context from "effect/Context";
@@ -32,6 +34,7 @@ export interface DesktopSettings {
   readonly serverExposureMode: DesktopServerExposureMode;
   readonly sidekickEnabled: boolean;
   readonly sidekickSize: DesktopSidekickSize;
+  readonly sidekickThreads: DesktopSidekickThreads;
   // Top-left of the sidekick window in screen coordinates; null until dragged.
   readonly sidekickPosition: DesktopSidekickPosition | null;
   readonly tailscaleServeEnabled: boolean;
@@ -85,6 +88,7 @@ export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
   serverExposureMode: "local-only",
   sidekickEnabled: false,
   sidekickSize: "medium",
+  sidekickThreads: "hover",
   sidekickPosition: null,
   tailscaleServeEnabled: false,
   tailscaleServePort: DEFAULT_TAILSCALE_SERVE_PORT,
@@ -108,6 +112,7 @@ const DesktopSettingsDocument = Schema.Struct({
   serverExposureMode: Schema.optionalKey(DesktopServerExposureModeSchema),
   sidekickEnabled: Schema.optionalKey(Schema.Boolean),
   sidekickSize: Schema.optionalKey(Schema.Unknown),
+  sidekickThreads: Schema.optionalKey(Schema.Unknown),
   sidekickPosition: Schema.optionalKey(Schema.NullOr(Schema.Unknown)),
   tailscaleServeEnabled: Schema.optionalKey(Schema.Boolean),
   tailscaleServePort: Schema.optionalKey(Schema.Number),
@@ -128,6 +133,7 @@ const decodeDesktopSettingsJson = Schema.decodeEffect(DesktopSettingsJson);
 const encodeDesktopSettingsJson = Schema.encodeEffect(DesktopSettingsJson);
 const decodeDesktopWindowBounds = Schema.decodeUnknownOption(DesktopWindowBoundsSchema);
 const decodeDesktopSidekickSize = Schema.decodeUnknownOption(DesktopSidekickSizeSchema);
+const decodeDesktopSidekickThreads = Schema.decodeUnknownOption(DesktopSidekickThreadsSchema);
 const decodeDesktopSidekickPosition = Schema.decodeUnknownOption(DesktopSidekickPositionSchema);
 const desktopWindowBoundsEquivalence = Schema.toEquivalence(DesktopWindowBoundsSchema);
 
@@ -236,6 +242,10 @@ function normalizeDesktopSettingsDocument(parsed: DesktopSettingsDocument): Desk
       decodeDesktopSidekickSize(parsed.sidekickSize),
       () => DEFAULT_DESKTOP_SETTINGS.sidekickSize,
     ),
+    sidekickThreads: Option.getOrElse(
+      decodeDesktopSidekickThreads(parsed.sidekickThreads),
+      () => DEFAULT_DESKTOP_SETTINGS.sidekickThreads,
+    ),
     sidekickPosition: Option.getOrNull(decodeDesktopSidekickPosition(parsed.sidekickPosition)),
     tailscaleServeEnabled: parsed.tailscaleServeEnabled === true,
     tailscaleServePort: normalizeTailscaleServePort(parsed.tailscaleServePort),
@@ -272,6 +282,9 @@ function toDesktopSettingsDocument(
   }
   if (settings.sidekickSize !== defaults.sidekickSize) {
     document.sidekickSize = settings.sidekickSize;
+  }
+  if (settings.sidekickThreads !== defaults.sidekickThreads) {
+    document.sidekickThreads = settings.sidekickThreads;
   }
   if (settings.sidekickPosition !== null) {
     document.sidekickPosition = settings.sidekickPosition;
@@ -316,9 +329,17 @@ function setSidekickPreferences(
       ? !settings.sidekickEnabled
       : (patch.enabled ?? settings.sidekickEnabled);
   const size = patch.size ?? settings.sidekickSize;
-  return settings.sidekickEnabled === enabled && settings.sidekickSize === size
+  const threads = patch.threads ?? settings.sidekickThreads;
+  return settings.sidekickEnabled === enabled &&
+    settings.sidekickSize === size &&
+    settings.sidekickThreads === threads
     ? settings
-    : { ...settings, sidekickEnabled: enabled, sidekickSize: size };
+    : {
+        ...settings,
+        sidekickEnabled: enabled,
+        sidekickSize: size,
+        sidekickThreads: threads,
+      };
 }
 
 function setSidekickPosition(

@@ -42,9 +42,11 @@ again to move to the next. Failures and completions clear once you open the thre
 minutes it falls asleep, and it only shows as offline when no environment is connected.
 
 Hover over the sidekick to list the threads that need you, are working, or finished since you last
-opened them, each with its status. Click one to open that thread.
+opened them, each with its status. Click one to open that thread. To keep the list open, set
+**Settings → General → Sidekick threads** to **Always**, or right-click the sidekick and choose
+**Show Threads → Always**.
 
-Drag it anywhere. Right-click it to change its size, reset its position, or hide it.
+Drag it anywhere. Right-click it to change its size or thread list, reset its position, or hide it.
 
 ## Custom themes
 
