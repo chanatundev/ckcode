@@ -36,6 +36,11 @@ The lines after the tree hash are conflicted files. Before resolving each one, r
 `git log --oneline $MB..HEAD -- <file>` and `git log --oneline $MB..upstream/main -- <file>`
 so you know what each side meant to do.
 
+Also scan `git log --oneline --no-merges $MB..upstream/main` for upstream features
+that overlap a fork feature. Collect every open question from this step, check
+it against [When to ask](#when-to-ask), and ask them all in one batch before
+you start the merge.
+
 ## 3. Merge on a sync branch
 
 ```bash
@@ -85,6 +90,31 @@ For each user-visible hit:
 
 Mobile is not rebranded, so leave it.
 
+## When to ask
+
+If a question matches a row in the tables above, follow the table. Ask the user
+only when one of these is true:
+
+| Trigger                                                                                                                                   | Example question                                                                                       |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Upstream deleted or redesigned code that a fork feature depends on, and keeping the feature means re-implementing it, not just porting it | "Upstream replaced the command menu that `/pipeline` hooks into. Re-implement it, or drop it for now?" |
+| Upstream shipped a feature that overlaps a fork feature                                                                                   | "Upstream added its own thread goals. Keep the fork's `/goal`, adopt upstream's, or keep both?"        |
+| Both sides changed the same behavior in incompatible ways, so you can't keep both                                                         | "Both sides changed composer submit on Enter. Which behavior wins?"                                    |
+| Upstream brings back something the fork removed or renamed, in a form the tables don't cover                                              | "Upstream moved update channels into a new settings page. Hide the nightly option there too?"          |
+| A "T3 Code" hit might mean the upstream project rather than this app                                                                      | "'Built on T3 Code' in the About panel: rebrand it, or keep it as credit?"                             |
+| Fixing a typecheck or test failure would change how a fork feature behaves, beyond a rename or signature update                           | "Sidekick prefs are now in a new settings schema. Migrate existing prefs, or reset them?"              |
+| The working tree has uncommitted work that isn't yours                                                                                    | "Commit, stash, or leave these changes before syncing?"                                                |
+
+How to ask:
+
+- Batch questions at a checkpoint, either after the step 2 preview or after the
+  first pass of resolution. Don't stop once per file.
+- Use AskUserQuestion. Offer 2-4 concrete options, put your recommendation first,
+  and name the file plus the fork and upstream commit subjects involved.
+- While waiting, keep resolving files the questions don't affect. Don't commit
+  the merge until every question is answered.
+- Record each answer in the merge commit message.
+
 ## 4. Verify (targeted, never repo-wide)
 
 For each package that had a conflict or a branding edit:
@@ -113,6 +143,7 @@ merge: sync upstream T3 Code <UP> into CKcode
 Brings in <N> upstream commits (<MB short>..<UP>).
 Conflicts: <file> — <what was kept from each side>; ...
 Branding: <strings rewritten to CKcode, or "none">
+Decisions: <question — user's answer>; ... (omit if none were asked)
 ```
 
 Ask before running `git push origin main`, because it publishes the fork.
@@ -122,5 +153,7 @@ Ask before running `git push origin main`, because it publishes the fork.
 - **Rebasing onto upstream.** This rewrites 25+ published commits and breaks origin. Merge instead.
 - **Resolving with `--theirs` or `--ours` on a whole file.** This silently drops the other side's feature. Use it only where the table allows it.
 - **Skipping the branding sweep because nothing conflicted.** New upstream strings ship as "T3 Code".
+- **Guessing on a trigger from "When to ask".** A quiet guess about a fork feature is harder to find and undo than a question.
+- **Asking about something the tables already settle.** For example, "keep CKcode branding?" Just apply the rule.
 - **Hand-merging `pnpm-lock.yaml`.** Regenerate it instead.
 - **Restoring nightly UI** because upstream's `SettingsPanels.tsx` hunk looked like a clean improvement.
