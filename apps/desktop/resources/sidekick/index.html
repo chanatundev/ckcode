@@ -17,7 +17,10 @@
         background: transparent;
         user-select: none;
         font:
-          12px / 1.3 system-ui,
+          12px / 1.3 -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          system-ui,
           sans-serif;
       }
       #sprite {
@@ -113,26 +116,45 @@
       body.expanded.start #panel {
         left: 0;
       }
+      /* Mirrors the app's default popover surface and sidebar status pills. The
+         desktop follows the app's light/dark choice, so the media query does too. */
+      :root {
+        --surface: #ffffff;
+        --surface-hover: #f4f4f5;
+        --border: #e4e4e7;
+        --foreground: #27272a;
+        --muted-foreground: #71717a;
+        --shadow: 0 4px 12px rgb(0 0 0 / 0.12);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --surface: #111111;
+          --surface-hover: #1a1a1a;
+          --border: rgb(255 255 255 / 0.08);
+          --foreground: #f5f5f5;
+          --muted-foreground: #8b8b8b;
+          --shadow: 0 6px 16px rgb(0 0 0 / 0.55);
+        }
+      }
       .session {
         position: relative;
         display: flex;
         align-items: center;
         gap: 10px;
-        height: 34px;
-        padding: 0 8px 0 12px;
+        height: 32px;
+        padding: 0 10px 0 12px;
         box-sizing: border-box;
-        border: 1px solid rgb(255 255 255 / 0.08);
+        border: 1px solid var(--border);
         border-radius: 10px;
-        background: rgb(31 36 48 / 0.96);
-        box-shadow: 0 2px 8px rgb(0 0 0 / 0.35);
-        color: #e6e9ef;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+        color: var(--foreground);
         font: inherit;
-        font-size: 12.5px;
         text-align: left;
         cursor: pointer;
       }
       .session:hover {
-        background: rgb(42 48 62 / 0.98);
+        background: var(--surface-hover);
       }
       .title {
         flex: 1;
@@ -145,41 +167,68 @@
         display: inline-flex;
         flex: none;
         align-items: center;
-        gap: 6px;
-        padding: 2px 8px;
-        border-radius: 999px;
-        background: rgb(var(--tone) / 0.18);
-        color: rgb(var(--tone));
+        gap: 5px;
+        color: var(--tone);
         font-size: 11px;
         white-space: nowrap;
       }
       .status::before {
         content: "";
-        width: 7px;
-        height: 7px;
+        width: 6px;
+        height: 6px;
         border-radius: 50%;
-        background: currentColor;
+        background: var(--dot);
       }
+      /* Tailwind 600/500 in light, 300 in dark, as in the sidebar. */
       .session[data-state="approval"] {
-        --tone: 252 211 77;
-        border-color: rgb(245 158 11 / 0.55);
+        --tone: #d97706;
+        --dot: #f59e0b;
       }
       .session[data-state="input"] {
-        --tone: 216 180 254;
-        border-color: rgb(168 85 247 / 0.55);
+        --tone: #4f46e5;
+        --dot: #6366f1;
       }
       .session[data-state="error"] {
-        --tone: 252 165 165;
-        border-color: rgb(239 68 68 / 0.55);
+        --tone: #dc2626;
+        --dot: #ef4444;
       }
       .session[data-state="plan"] {
-        --tone: 94 234 212;
+        --tone: #7c3aed;
+        --dot: #8b5cf6;
       }
       .session[data-state="working"] {
-        --tone: 147 197 253;
+        --tone: #0284c7;
+        --dot: #0ea5e9;
       }
       .session[data-state="success"] {
-        --tone: 134 239 172;
+        --tone: #059669;
+        --dot: #10b981;
+      }
+      @media (prefers-color-scheme: dark) {
+        .session[data-state="approval"] {
+          --tone: rgb(252 211 77 / 0.9);
+          --dot: rgb(252 211 77 / 0.9);
+        }
+        .session[data-state="input"] {
+          --tone: rgb(165 180 252 / 0.9);
+          --dot: rgb(165 180 252 / 0.9);
+        }
+        .session[data-state="error"] {
+          --tone: rgb(252 165 165 / 0.9);
+          --dot: rgb(252 165 165 / 0.9);
+        }
+        .session[data-state="plan"] {
+          --tone: rgb(196 181 253 / 0.9);
+          --dot: rgb(196 181 253 / 0.9);
+        }
+        .session[data-state="working"] {
+          --tone: rgb(125 211 252 / 0.8);
+          --dot: rgb(125 211 252 / 0.8);
+        }
+        .session[data-state="success"] {
+          --tone: rgb(110 231 183 / 0.9);
+          --dot: rgb(110 231 183 / 0.9);
+        }
       }
       /* Points from the nearest box at the sprite's center. */
       body.expanded .session:first-child::after {
@@ -187,7 +236,7 @@
         position: absolute;
         width: 9px;
         height: 9px;
-        border: inherit;
+        border: 1px solid var(--border);
         background: inherit;
         transform: rotate(45deg);
       }
@@ -209,11 +258,11 @@
       }
       .more {
         height: 24px;
-        border: 1px solid rgb(255 255 255 / 0.08);
-        border-radius: 12px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
         box-sizing: border-box;
-        background: rgb(31 36 48 / 0.92);
-        color: #8a93a6;
+        background: var(--surface);
+        color: var(--muted-foreground);
         font-size: 11px;
         line-height: 22px;
         text-align: center;
