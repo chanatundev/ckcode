@@ -2827,10 +2827,48 @@ export default function Sidebar() {
     workingShelfEnabled,
   ]);
 
+  const projectKeysWithOpenChats = useMemo(() => {
+    const keys = new Set(openDraftProjectKeys);
+    for (const threadsInSection of [pinnedThreads, activeThreads, snoozedThreads]) {
+      for (const thread of threadsInSection) {
+        keys.add(`${thread.environmentId}:${thread.projectId}`);
+      }
+    }
+    return keys;
+  }, [activeThreads, openDraftProjectKeys, pinnedThreads, snoozedThreads]);
+
   const threadSearchInputRef = useRef<HTMLInputElement>(null);
   const [threadSearchQuery, setThreadSearchQuery] = useState("");
   const [activeSearchResultIndex, setActiveSearchResultIndex] = useState(0);
   const isSearchingThreads = threadSearchQuery.trim().length > 0;
+  const settledProjectGroups = useMemo(() => {
+    if (isSearchingThreads) return [];
+    const query = threadSearchQuery.trim().toLocaleLowerCase();
+    return projectGroups.filter((group) => {
+      if (
+        scopedProjectKeys !== null &&
+        !group.memberProjectRefs.some((projectRef) =>
+          scopedProjectKeys.has(`${projectRef.environmentId}:${projectRef.projectId}`),
+        )
+      ) {
+        return false;
+      }
+      if (
+        group.memberProjectRefs.some((projectRef) =>
+          projectKeysWithOpenChats.has(`${projectRef.environmentId}:${projectRef.projectId}`),
+        )
+      ) {
+        return false;
+      }
+      return query.length === 0 || group.displayName.toLocaleLowerCase().includes(query);
+    });
+  }, [
+    isSearchingThreads,
+    projectGroups,
+    projectKeysWithOpenChats,
+    scopedProjectKeys,
+    threadSearchQuery,
+  ]);
   const searchableThreads = useMemo(
     () => [
       ...pinnedThreads,
@@ -4802,6 +4840,34 @@ export default function Sidebar() {
   // falling back to the top project) — same resolution the command palette
   // uses. The command palette already offers a "New thread in..." submenu
   // for multi-project setups.
+  const openSettledProject = useCallback(
+    (projectGroup: SidebarProjectSnapshot) => {
+      const project =
+        projectGroup.memberProjects.find(
+          (member) =>
+            member.environmentId === projectGroup.environmentId && member.id === projectGroup.id,
+        ) ?? projectGroup.memberProjects[0];
+      if (!project) return;
+      if (isMobile) setOpenMobile(false);
+      void (async () => {
+        const result = await settlePromise(() =>
+          newThreadContext.handleNewThread(scopeProjectRef(project.environmentId, project.id)),
+        );
+        if (result._tag === "Failure") {
+          const error = squashAtomCommandFailure(result);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Could not open project",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            }),
+          );
+        }
+      })();
+    },
+    [isMobile, newThreadContext.handleNewThread, setOpenMobile],
+  );
+
   const handleNewThreadClick = useCallback(
     (event?: ReactMouseEvent) => {
       // One project: nothing to pick, create immediately. Shift+click creates
@@ -5399,6 +5465,51 @@ export default function Sidebar() {
                         </button>
                       </li>
                     ) : null}
+                    {settledProjectGroups.length > 0 ? (
+                      <>
+                        <li
+                          role="presentation"
+                          className="mt-1 list-none border-t border-sidebar-border/60"
+                        >
+                          <div className="flex h-8 items-center gap-2 px-2 text-xs font-medium text-sidebar-muted-foreground/60">
+                            <span className="shrink-0">Settled projects</span>
+                            <span
+                              aria-hidden
+                              className="h-px min-w-2 flex-1 bg-sidebar-border/60"
+                            />
+                          </div>
+                        </li>
+                        {settledProjectGroups.map((projectGroup) => (
+                          <li
+                            key={`settled-project:${projectGroup.projectKey}`}
+                            className="list-none"
+                          >
+                            <div className="flex h-9 items-center gap-2 rounded-md px-2.5 text-sm text-sidebar-foreground">
+                              <ProjectFavicon project={projectGroup} className="size-4 shrink-0" />
+                              <span className="min-w-0 flex-1 truncate">
+                                {projectGroup.displayName}
+                              </span>
+                              {showProjectEnvironments ? (
+                                <ProjectEnvironmentBadge
+                                  group={projectGroup}
+                                  primaryEnvironmentId={primaryEnvironmentId}
+                                  machineByEnvironmentId={environmentMachineById}
+                                />
+                              ) : null}
+                              <Button
+                                size="xs"
+                                variant="ghost-muted"
+                                aria-label={`Open ${projectGroup.displayName} in a new chat`}
+                                onClick={() => openSettledProject(projectGroup)}
+                              >
+                                <ExternalLinkIcon aria-hidden className="size-3" />
+                                Open
+                              </Button>
+                            </div>
+                          </li>
+                        ))}
+                      </>
+                    ) : null}
                   </ul>
                 </SortableContext>
               </DndContext>
@@ -5411,7 +5522,8 @@ export default function Sidebar() {
             workingThreads.length +
             snoozedThreads.length +
             settledThreads.length ===
-            0 ? (
+            0 &&
+          settledProjectGroups.length === 0 ? (
             <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-muted-foreground/60">
               {projects.length === 0 ? (
                 <>
