@@ -2,7 +2,7 @@
 
 **CKcode is a fork of [T3 Code](https://github.com/pingdotgg/t3code).** Credit and thanks go to the [T3 Code contributors](https://github.com/pingdotgg/t3code/graphs/contributors) for creating and maintaining the original project.
 
-This fork tracks upstream T3 Code while preserving the CKcode-specific additions below. See the [upstream README](https://github.com/pingdotgg/t3code#readme) for shared setup and documentation.
+This fork follows upstream T3 Code's nightly releases while preserving the CKcode-specific additions below. Each sync merges the newest upstream nightly and takes its version (for example `0.0.46-nightly.20261004.2644`), so the desktop app is CKcode (Nightly). Desktop SSH environments start the upstream `t3` release with that same version on the remote machine. See the [upstream README](https://github.com/pingdotgg/t3code#readme) for shared setup and documentation.
 
 ## Where edits are targeted
 
@@ -37,6 +37,6 @@ When a message includes a supported public GitHub, GitLab, Linear, or Jira issue
 
 The web and mobile clients group projects with settled threads and let you open a project in a new chat.
 
-### Nightly update protection
+### Upstream nightly notice
 
-The desktop app ignores an older nightly release result, preventing it from offering a downgrade over the installed nightly version.
+CKcode has no automatic updates. When upstream T3 Code publishes a nightly newer than the one CKcode was merged from, the update button in the desktop sidebar points to that release. To update, run the `update-ckcode-from-t3code` agent skill, then rebuild and reinstall the desktop app.
