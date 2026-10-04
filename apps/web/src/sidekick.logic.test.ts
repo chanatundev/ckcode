@@ -1,4 +1,10 @@
-import { EnvironmentId, ThreadId, TurnId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  type OrchestrationV2PendingRuntimeRequestSummary,
+  RuntimeRequestId,
+  ThreadId,
+} from "@t3tools/contracts";
+import { DateTime } from "effect";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -18,50 +24,47 @@ function iso(offsetMs: number) {
   return new Date(NOW + offsetMs).toISOString();
 }
 
+function dt(offsetMs: number): DateTime.Utc {
+  return DateTime.makeUnsafe(iso(offsetMs));
+}
+
 function thread(id: string, overrides: Partial<SidekickThreadInput> = {}): SidekickThreadInput {
   return {
     id: ThreadId.make(id),
     title: `Thread ${id}`,
     archivedAt: null,
-    updatedAt: iso(-60_000),
-    hasPendingApprovals: false,
-    hasPendingUserInput: false,
+    updatedAt: dt(-60_000),
+    status: "idle",
+    activityRunStatus: null,
+    latestRunCompletedAt: null,
+    pendingRuntimeRequest: null,
     hasActionableProposedPlan: false,
     interactionMode: "default",
-    latestTurn: null,
-    session: null,
-    backgroundLiveness: null,
     ...overrides,
   };
 }
 
 function running(id: string, overrides: Partial<SidekickThreadInput> = {}) {
   return thread(id, {
-    session: {
-      threadId: ThreadId.make(id),
-      status: "running",
-      providerName: null,
-      runtimeMode: "full-access",
-      activeTurnId: TurnId.make(`${id}-turn`),
-      lastError: null,
-      updatedAt: iso(-1_000),
-    },
+    activityRunStatus: "running",
+    updatedAt: dt(-1_000),
     ...overrides,
   });
 }
 
-function settledTurn(
-  id: string,
-  completedAt: string,
-  state: "completed" | "error" = "completed",
-): SidekickThreadInput["latestTurn"] {
+function pendingApproval(id: string): OrchestrationV2PendingRuntimeRequestSummary {
   return {
-    turnId: TurnId.make(`${id}-turn`),
-    state,
-    requestedAt: iso(-120_000),
-    startedAt: iso(-110_000),
-    completedAt,
-    assistantMessageId: null,
+    id: RuntimeRequestId.make(`${id}-approval`),
+    kind: "command",
+    createdAt: dt(-10_000),
+  };
+}
+
+function pendingUserInput(id: string): OrchestrationV2PendingRuntimeRequestSummary {
+  return {
+    id: RuntimeRequestId.make(`${id}-input`),
+    kind: "user_input",
+    createdAt: dt(-10_000),
   };
 }
 
@@ -77,13 +80,13 @@ function env(
 
 describe("resolveSidekickThreadState", () => {
   it("reports an unseen completion as success and a seen one as waiting", () => {
-    const completed = { latestTurn: settledTurn("a", iso(-10_000)) };
+    const completed = { latestRunCompletedAt: dt(-10_000) };
     expect(resolveSidekickThreadState(thread("a", completed), iso(-20_000))).toBe("success");
     expect(resolveSidekickThreadState(thread("a", completed), iso(-5_000))).toBe("waiting");
   });
 
   it("only reports failures the user has not seen", () => {
-    const failed = { latestTurn: settledTurn("a", iso(-10_000), "error") };
+    const failed = { status: "failed" as const, latestRunCompletedAt: dt(-10_000) };
     expect(resolveSidekickThreadState(thread("a", failed), iso(-20_000))).toBe("error");
     expect(resolveSidekickThreadState(thread("a", failed), iso(-5_000))).toBe("waiting");
   });
@@ -94,7 +97,7 @@ describe("resolveSidekickThreadState", () => {
         thread("a", {
           interactionMode: "plan",
           hasActionableProposedPlan: true,
-          latestTurn: settledTurn("a", iso(-10_000)),
+          latestRunCompletedAt: dt(-10_000),
         }),
         undefined,
       ),
@@ -104,7 +107,7 @@ describe("resolveSidekickThreadState", () => {
   it("ignores archived threads", () => {
     expect(
       resolveSidekickThreadState(
-        thread("a", { archivedAt: iso(0), hasPendingApprovals: true }),
+        thread("a", { archivedAt: dt(0), pendingRuntimeRequest: pendingApproval("a") }),
         undefined,
       ),
     ).toBeNull();
@@ -118,7 +121,7 @@ describe("resolveSidekickSnapshot", () => {
       nowMs: NOW,
       environments: [
         env([running("a"), running("b")]),
-        env([thread("c", { hasPendingApprovals: true })], REMOTE),
+        env([thread("c", { pendingRuntimeRequest: pendingApproval("c") })], REMOTE),
       ],
     });
     expect(snapshot.state).toBe("approval");
@@ -128,7 +131,7 @@ describe("resolveSidekickSnapshot", () => {
   });
 
   it("looks up visits per environment", () => {
-    const completed = thread("a", { latestTurn: settledTurn("a", iso(-10_000)) });
+    const completed = thread("a", { latestRunCompletedAt: dt(-10_000) });
     const snapshot = resolveSidekickSnapshot({
       lastVisitedAt: (environmentId) => (environmentId === REMOTE ? iso(-20_000) : iso(-5_000)),
       nowMs: NOW,
@@ -144,8 +147,14 @@ describe("resolveSidekickSnapshot", () => {
       nowMs: NOW,
       environments: [
         env([
-          thread("newer", { hasPendingUserInput: true, updatedAt: iso(-1_000) }),
-          thread("older", { hasPendingUserInput: true, updatedAt: iso(-50_000) }),
+          thread("newer", {
+            pendingRuntimeRequest: pendingUserInput("newer"),
+            updatedAt: dt(-1_000),
+          }),
+          thread("older", {
+            pendingRuntimeRequest: pendingUserInput("older"),
+            updatedAt: dt(-50_000),
+          }),
         ]),
       ],
     });
@@ -165,7 +174,7 @@ describe("resolveSidekickSnapshot", () => {
   });
 
   it("falls asleep after a long idle and reports when it will", () => {
-    const idle = [thread("a", { updatedAt: iso(-60_000) })];
+    const idle = [thread("a", { updatedAt: dt(-60_000) })];
     const awake = resolveSidekickSnapshot({
       lastVisitedAt: neverVisited,
       nowMs: NOW,
@@ -194,12 +203,12 @@ describe("resolveSidekickSnapshot", () => {
           thread("idle"),
           running("w3"),
           running("w2"),
-          thread("done", { latestTurn: settledTurn("done", iso(-10_000)) }),
+          thread("done", { latestRunCompletedAt: dt(-10_000) }),
         ]),
         env(
           [
-            thread("ask", { hasPendingUserInput: true }),
-            thread("approve", { hasPendingApprovals: true }),
+            thread("ask", { pendingRuntimeRequest: pendingUserInput("ask") }),
+            thread("approve", { pendingRuntimeRequest: pendingApproval("approve") }),
           ],
           REMOTE,
         ),
@@ -262,8 +271,8 @@ describe("pickSidekickTarget", () => {
     expect(pickSidekickTarget([a, b], b)).toBe(a);
   });
 
-  it("restarts when the last opened thread left the queue", () => {
-    expect(pickSidekickTarget([b], a)).toBe(b);
-    expect(pickSidekickTarget([], a)).toBeNull();
+  it("returns the first target when the previous target is no longer active", () => {
+    const c = { environmentId: LOCAL, threadId: ThreadId.make("c") };
+    expect(pickSidekickTarget([a, b], c)).toBe(a);
   });
 });

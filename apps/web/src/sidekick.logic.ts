@@ -3,12 +3,10 @@ import {
   type DesktopSidekickSession,
   type DesktopSidekickState,
   type EnvironmentId,
-  type OrchestrationThreadShell,
+  type OrchestrationV2ThreadShell,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
-
-import { resolveSidebarThreadStatus } from "./components/Sidebar.logic";
-import { isLatestTurnSettled } from "./session-logic";
+import { DateTime } from "effect";
 
 export type SidekickState = DesktopSidekickState;
 
@@ -38,24 +36,23 @@ const ATTENTION_STATES: ReadonlySet<SidekickState> = new Set([
 ]);
 
 export type SidekickThreadInput = Pick<
-  OrchestrationThreadShell,
+  OrchestrationV2ThreadShell,
   | "id"
   | "title"
   | "archivedAt"
   | "updatedAt"
-  | "hasPendingApprovals"
-  | "hasPendingUserInput"
+  | "status"
+  | "activityRunStatus"
+  | "latestRunCompletedAt"
+  | "pendingRuntimeRequest"
   | "hasActionableProposedPlan"
   | "interactionMode"
-  | "latestTurn"
-  | "session"
-  | "backgroundLiveness"
 >;
 
 /** When this client last opened a thread; undefined if it never has. */
 export type SidekickLastVisitedAt = (
   environmentId: EnvironmentId,
-  threadId: OrchestrationThreadShell["id"],
+  threadId: OrchestrationV2ThreadShell["id"],
 ) => string | undefined;
 
 export interface SidekickEnvironmentInput {
@@ -101,10 +98,17 @@ const BREAKDOWN_LABELS: Record<Exclude<ThreadState, "waiting">, [string, string]
   success: ["completed", "completed"],
 };
 
-function parseMs(value: string | null | undefined): number | null {
+function parseMs(value: DateTime.Utc | string | number | null | undefined): number | null {
   if (!value) return null;
-  const ms = Date.parse(value);
-  return Number.isFinite(ms) ? ms : null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string") {
+    const ms = Date.parse(value);
+    return Number.isFinite(ms) ? ms : null;
+  }
+  if (DateTime.isDateTime(value)) {
+    return DateTime.toEpochMillis(value);
+  }
+  return null;
 }
 
 /**
@@ -123,30 +127,40 @@ export function resolveSidekickThreadState(
   lastVisitedAt: string | undefined,
 ): ThreadState | null {
   if (thread.archivedAt !== null) return null;
-  const status = resolveSidebarThreadStatus(thread);
-  if (status === "approval" || status === "input") return status;
-  if (thread.session?.status === "running" || thread.session?.status === "starting") {
+  if (
+    thread.pendingRuntimeRequest !== null &&
+    thread.pendingRuntimeRequest !== undefined &&
+    thread.pendingRuntimeRequest.kind !== "user_input" &&
+    thread.pendingRuntimeRequest.kind !== "auth_refresh"
+  ) {
+    return "approval";
+  }
+  if (thread.pendingRuntimeRequest?.kind === "user_input") return "input";
+  if (
+    thread.activityRunStatus === "running" ||
+    thread.activityRunStatus === "starting" ||
+    thread.activityRunStatus === "preparing"
+  ) {
     return "working";
   }
-  const failed =
-    status === "failed" || (status === "ready" && thread.latestTurn?.state === "error");
-  const failedAt = parseMs(thread.latestTurn?.completedAt) ?? parseMs(thread.session?.updatedAt);
+  const failed = thread.status === "failed";
+  const failedAt = parseMs(thread.latestRunCompletedAt) ?? parseMs(thread.updatedAt);
   if (failed && isUnseen(failedAt, lastVisitedAt)) return "error";
   if (
     thread.interactionMode === "plan" &&
     thread.hasActionableProposedPlan &&
-    isLatestTurnSettled(thread.latestTurn, thread.session)
+    (thread.activityRunStatus === null || thread.activityRunStatus === "waiting")
   ) {
     return "plan";
   }
-  if (status === "working") return "working";
-  if (isUnseen(parseMs(thread.latestTurn?.completedAt), lastVisitedAt)) return "success";
+  if (thread.activityRunStatus === "waiting") return "working";
+  if (isUnseen(parseMs(thread.latestRunCompletedAt), lastVisitedAt)) return "success";
   return "waiting";
 }
 
 /** When the thread entered its current state, for longest-waiting-first ordering. */
 function waitingSinceMs(thread: SidekickThreadInput, state: ThreadState): number {
-  const completedAt = parseMs(thread.latestTurn?.completedAt);
+  const completedAt = parseMs(thread.latestRunCompletedAt);
   if ((state === "error" || state === "success" || state === "plan") && completedAt !== null) {
     return completedAt;
   }
@@ -154,11 +168,7 @@ function waitingSinceMs(thread: SidekickThreadInput, state: ThreadState): number
 }
 
 function lastActivityMs(thread: SidekickThreadInput): number {
-  return Math.max(
-    parseMs(thread.latestTurn?.completedAt) ?? 0,
-    parseMs(thread.session?.updatedAt) ?? 0,
-    parseMs(thread.updatedAt) ?? 0,
-  );
+  return Math.max(parseMs(thread.latestRunCompletedAt) ?? 0, parseMs(thread.updatedAt) ?? 0);
 }
 
 const MAX_TITLE_LENGTH = 120;

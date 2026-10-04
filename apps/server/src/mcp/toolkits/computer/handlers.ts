@@ -62,7 +62,7 @@ const handlers = {
     withComputerAccess("computer_activate_app", async () => {
       const { App } = await import("@crowecawcaw/xa11y");
       const app = await App.byName(input.app, { timeout: 0 });
-      const windows = await app.windows();
+      const windows = await app.children();
       const window = input.window
         ? windows.find((candidate) => candidate.name === input.window)
         : (windows.find((candidate) => candidate.active) ?? windows[0]);
@@ -73,7 +73,7 @@ const handlers = {
             : `No accessible window was found in ${app.name}.`,
         );
       }
-      await window.activate();
+      await window.focus();
       return { app: app.name, window: window.name ?? "" };
     }),
   computer_screenshot: (input) =>
@@ -85,7 +85,7 @@ const handlers = {
       let region: { x: number; y: number; width: number; height: number } | undefined;
       try {
         const app = await xa11y.App.foreground({ timeout: 0 });
-        const activeWindow = (await app.windows()).find((window) => window.active);
+        const activeWindow = (await app.children()).find((window) => window.active);
         if (activeWindow?.bounds) {
           appName = app.name;
           region = activeWindow.bounds;
@@ -129,7 +129,8 @@ const handlers = {
 
 const { computer_screenshot, ...standardHandlers } = handlers;
 
-export const ComputerStandardToolkitHandlersLive = ComputerStandardToolkit.toLayer(standardHandlers);
+export const ComputerStandardToolkitHandlersLive =
+  ComputerStandardToolkit.toLayer(standardHandlers);
 export const ComputerScreenshotToolkitHandlersLive = ComputerScreenshotToolkit.toLayer({
   computer_screenshot,
 });

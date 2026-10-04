@@ -2,7 +2,7 @@
 
 **CKcode is a fork of [T3 Code](https://github.com/pingdotgg/t3code).** Credit and thanks go to the [T3 Code contributors](https://github.com/pingdotgg/t3code/graphs/contributors) for creating and maintaining the original project.
 
-This fork follows upstream T3 Code's nightly releases while preserving the CKcode-specific additions below. Each sync merges the newest upstream nightly and takes its version (for example `0.0.46-nightly.20261004.2644`), so the desktop app is CKcode (Nightly). Desktop SSH environments start the upstream `t3` release with that same version on the remote machine. See the [upstream README](https://github.com/pingdotgg/t3code#readme) for shared setup and documentation.
+This fork follows upstream T3 Code's nightly releases while preserving the CKcode-specific additions below. Each sync merges the newest upstream nightly and takes its version (for example `0.0.46-nightly.20261004.2648`), so the desktop app is CKcode (Nightly). Desktop SSH environments start the upstream `t3` release with that same version on the remote machine. See the [upstream README](https://github.com/pingdotgg/t3code#readme) for shared setup and documentation.
 
 ## Where edits are targeted
 
@@ -20,13 +20,11 @@ My setup uses a hybrid local/remote workflow tailored for multi-environment deve
 
 ### Thread workflows
 
-- `/goal` saves, shows, or clears a persistent goal for a thread.
-- `/handoff` starts a thread with another provider; `/fork` starts a parallel thread. Both carry over recent text history and the thread goal. Attachments are not copied.
+- `/goal` saves, shows, or clears a persistent goal for a thread. The goal carries into upstream's native thread forks and provider handoffs.
 - `/pipeline` builds a Plan → Build → Review prompt with a provider and model selected for each stage. Review the generated prompt in the composer before sending it.
 
 ### MCP tools
 
-- Agents can start an independent thread through the T3 Code MCP server.
 - When enabled in Integrations settings, agents can inspect and control desktop apps through MCP, including accessibility inspection, screenshots, clicks, typing, and key presses.
 
 ### Issue-link context
@@ -35,7 +33,7 @@ When a message includes a supported public GitHub, GitLab, Linear, or Jira issue
 
 ### Settled-project shortcuts
 
-The web and mobile clients group projects with settled threads and let you open a project in a new chat.
+The web client groups projects with settled threads and lets you open a project in a new chat.
 
 ### Upstream nightly notice
 
