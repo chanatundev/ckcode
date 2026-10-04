@@ -6,7 +6,12 @@ description: Use when updating, syncing, or pulling the CKcode fork up to date w
 # Update CKcode from T3 Code
 
 CKcode (`chanatundev/ckcode`) is a fork of T3 Code (`pingdotgg/t3code`) whose
-history contains upstream. Update it with a **merge** of `upstream/main`.
+history contains upstream. Update it with a **merge** of the newest upstream
+**nightly tag** (`v<semver>-nightly.<date>.<run>`), not `upstream/main` HEAD:
+every nightly is a commit upstream CI built and published, and CKcode carries
+that tag's version so its sidebar can tell when a newer nightly is out. Upstream
+cuts stable releases from nightly commits on `main`, so the tags sit on `main`'s
+history and the merge-base flow is the same as merging `main`.
 Never rebase fork commits and never force-push: `main` is published, and a merge
 keeps every later sync's merge-base correct.
 
@@ -16,12 +21,20 @@ keeps every later sync's merge-base correct.
 git status --short                      # must be clean apart from untracked noise
 git remote get-url upstream 2>/dev/null \
   || git remote add upstream https://github.com/pingdotgg/t3code.git
-git fetch upstream main && git fetch origin main
+git fetch upstream main --tags && git fetch origin main
 git switch main && git merge --ff-only origin/main
-MB=$(git merge-base HEAD upstream/main)
-git rev-list --count HEAD..upstream/main   # 0 → already up to date, stop
+TAG=$(git for-each-ref --sort=-creatordate --count=1 --format='%(refname:short)' 'refs/tags/v*-nightly.*')
+VERSION=${TAG#v}
+git merge-base --is-ancestor $TAG upstream/main  # must succeed; nightlies are cut from main
+git merge-base --is-ancestor $TAG HEAD && echo "already up to date"  # → stop
+MB=$(git merge-base HEAD $TAG)
+git rev-list --count HEAD..$TAG            # upstream commits this sync brings in
 git log --oneline --no-merges $MB..HEAD    # fork-only commits to protect
 ```
+
+`gh release view $TAG -R pingdotgg/t3code` should show a published nightly. If
+the newest nightly tag has no published release (its build failed), use the
+previous one.
 
 If the working tree has uncommitted work that isn't yours, stop and ask. Don't
 stash or discard it.
@@ -29,14 +42,14 @@ stash or discard it.
 ## 2. Preview conflicts without touching the tree
 
 ```bash
-git merge-tree --write-tree --name-only HEAD upstream/main
+git merge-tree --write-tree --name-only HEAD $TAG
 ```
 
 The lines after the tree hash are conflicted files. Before resolving each one, read
-`git log --oneline $MB..HEAD -- <file>` and `git log --oneline $MB..upstream/main -- <file>`
+`git log --oneline $MB..HEAD -- <file>` and `git log --oneline $MB..$TAG -- <file>`
 so you know what each side meant to do.
 
-Also scan `git log --oneline --no-merges $MB..upstream/main` for upstream features
+Also scan `git log --oneline --no-merges $MB..$TAG` for upstream features
 that overlap a fork feature. Collect every open question from this step, check
 it against [When to ask](#when-to-ask), and ask them all in one batch before
 you start the merge.
@@ -44,28 +57,40 @@ you start the merge.
 ## 3. Merge on a sync branch
 
 ```bash
-UP=$(git rev-parse --short upstream/main)
-git switch -c sync/t3code-$UP
-git merge --no-ff --no-commit upstream/main
+git switch -c sync/t3code-$VERSION
+git merge --no-ff --no-commit $TAG
 ```
 
-Resolve every conflict with the rules below, then run `vp i`. Commit when
-`git diff --name-only --diff-filter=U` is empty and no `<<<<<<<` markers remain.
+Resolve every conflict with the rules below, then stamp the merged nightly's
+version into the release packages (server, desktop, web, contracts) and refresh
+the lockfile:
+
+```bash
+node scripts/update-release-package-versions.ts $VERSION
+vp i
+```
+
+Upstream commits only stable versions and stamps nightly versions in CI, so this
+step is what makes CKcode report `$VERSION`. It is required even when nothing
+conflicted. Commit when `git diff --name-only --diff-filter=U` is empty and no
+`<<<<<<<` markers remain.
 
 ## Resolution rules
 
 The default is to keep **both** sides: take upstream's change and re-apply the
 fork's intent on top of it. Take one side wholesale only when a row below says so.
 
-| Area                                                                                                                                                     | Rule                                                                                                                                                                                                                   |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Fork features (sidekick, `/goal` `/handoff` `/fork` `/pipeline`, MCP start-thread and computer-use tools, issue-link context, settled-project shortcuts) | Keep them. Port to upstream's new shape if upstream refactored the surrounding code. Listed in `README.md` under "Fork-specific additions".                                                                            |
-| Branding                                                                                                                                                 | User-visible name stays **CKcode**: `apps/desktop/package.json` `productName`, desktop `APP_BASE_NAME`, `apps/desktop/resources/branding/*`, icon paths in `DesktopAssets.ts` and `scripts/build-desktop-artifact.ts`. |
-| Nightly update track                                                                                                                                     | Stays removed. If upstream edits nightly channel code (`apps/desktop/src/updates/*`, `DesktopAppSettings.ts`, update IPC channel, update-track UI in `SettingsPanels.tsx`), keep the fork's stable-only behavior.      |
-| `README.md`                                                                                                                                              | Keep the fork's version.                                                                                                                                                                                               |
-| `AGENTS.md`, `docs/`, `.repos/`                                                                                                                          | Take upstream's version unless it has fork-specific edits.                                                                                                                                                             |
-| `pnpm-lock.yaml`                                                                                                                                         | `git checkout --theirs pnpm-lock.yaml`, then `vp i` to regenerate it. Stage the result.                                                                                                                                |
-| IPC channels, contracts, settings schemas                                                                                                                | Union both sides' entries. Don't drop an upstream channel, and don't drop a sidekick channel either.                                                                                                                   |
+| Area                                                                                                                                                     | Rule                                                                                                                                                                                                                                                                                                                                        |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Fork features (sidekick, `/goal` `/handoff` `/fork` `/pipeline`, MCP start-thread and computer-use tools, issue-link context, settled-project shortcuts) | Keep them. Port to upstream's new shape if upstream refactored the surrounding code. Listed in `README.md` under "Fork-specific additions".                                                                                                                                                                                                 |
+| Branding                                                                                                                                                 | User-visible name stays **CKcode**: `apps/desktop/package.json` `productName`, desktop `APP_BASE_NAME`, `apps/desktop/resources/branding/*`, icon paths in `DesktopAssets.ts` and `scripts/build-desktop-artifact.ts`.                                                                                                                      |
+| Nightly update track                                                                                                                                     | The update-track selector stays removed. If upstream edits nightly channel code (`apps/desktop/src/updates/*`, `DesktopAppSettings.ts`, update IPC channel, update-track UI in `SettingsPanels.tsx`), keep the fork's single-channel updater. Nightly _versioning_ is expected: the app is "CKcode (Nightly)" with the nightly sidebar art. |
+| `version` in `apps/{server,desktop,web}/package.json`, `packages/contracts/package.json`                                                                 | Always the merged tag's `$VERSION`. Upstream's `chore(release): prepare vX` commits conflict here every sync; the stamp step settles them.                                                                                                                                                                                                  |
+| Upstream nightly notice (`apps/web/src/upstreamNightly.ts`, `SidebarUpstreamNightlyPill.tsx`, its switch in `SidebarChrome.tsx`)                         | Keep. If upstream reworks `SidebarUpdatePill`, keep CKcode rendering the notice in its place.                                                                                                                                                                                                                                               |
+| `README.md`                                                                                                                                              | Keep the fork's version.                                                                                                                                                                                                                                                                                                                    |
+| `AGENTS.md`, `docs/`, `.repos/`                                                                                                                          | Take upstream's version unless it has fork-specific edits.                                                                                                                                                                                                                                                                                  |
+| `pnpm-lock.yaml`                                                                                                                                         | `git checkout --theirs pnpm-lock.yaml`, then `vp i` to regenerate it. Stage the result.                                                                                                                                                                                                                                                     |
+| IPC channels, contracts, settings schemas                                                                                                                | Union both sides' entries. Don't drop an upstream channel, and don't drop a sidekick channel either.                                                                                                                                                                                                                                        |
 
 Leave internal identifiers alone: the `t3` CLI, `@t3tools/*` packages,
 `~/.t3`, `T3CODE_*` env vars, `t3.codes` URLs, and T3 Connect.
@@ -132,15 +157,15 @@ feature that calls an API upstream renamed. Fix the fork code, not upstream's.
 
 ```bash
 git commit    # message below
-git switch main && git merge --ff-only sync/t3code-$UP && git branch -d sync/t3code-$UP
+git switch main && git merge --ff-only sync/t3code-$VERSION && git branch -d sync/t3code-$VERSION
 ```
 
 Commit message:
 
 ```
-merge: sync upstream T3 Code <UP> into CKcode
+merge: sync upstream T3 Code <TAG> into CKcode
 
-Brings in <N> upstream commits (<MB short>..<UP>).
+Brings in <N> upstream commits (<MB short>..<TAG>); CKcode is now <VERSION>.
 Conflicts: <file> — <what was kept from each side>; ...
 Branding: <strings rewritten to CKcode, or "none">
 Decisions: <question — user's answer>; ... (omit if none were asked)
@@ -150,6 +175,8 @@ Ask before running `git push origin main`, because it publishes the fork.
 
 ## Common mistakes
 
+- **Merging `upstream/main` HEAD.** It may hold commits no nightly has built, and CKcode's version would not name what it contains. Merge the nightly tag.
+- **Skipping the version stamp.** CKcode keeps reporting the old version, and the sidebar keeps offering the nightly you just merged.
 - **Rebasing onto upstream.** This rewrites 25+ published commits and breaks origin. Merge instead.
 - **Resolving with `--theirs` or `--ours` on a whole file.** This silently drops the other side's feature. Use it only where the table allows it.
 - **Skipping the branding sweep because nothing conflicted.** New upstream strings ship as "T3 Code".
