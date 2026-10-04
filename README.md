@@ -31,10 +31,6 @@ My setup uses a hybrid local/remote workflow tailored for multi-environment deve
 
 When a message includes a supported public GitHub, GitLab, Linear, or Jira issue URL, T3 Code adds available issue details to the provider prompt. If details cannot be fetched, the message is sent with its link unchanged.
 
-### Settled-project shortcuts
-
-The web client groups projects with settled threads and lets you open a project in a new chat.
-
 ### Upstream nightly notice
 
 CKcode has no automatic updates. When upstream T3 Code publishes a nightly newer than the one CKcode was merged from, the update button in the desktop sidebar points to that release. To update, run the `update-ckcode-from-t3code` agent skill, then rebuild and reinstall the desktop app.
