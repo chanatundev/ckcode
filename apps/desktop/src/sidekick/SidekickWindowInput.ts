@@ -1,3 +1,4 @@
+import type { DesktopSidekickSize } from "@t3tools/contracts";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
@@ -23,10 +24,15 @@ export type SidekickWindowInput = typeof SidekickWindowInput.Type;
 
 /** How the page lays out the sprite and its hover list inside the window. */
 export type SidekickWindowLayout =
-  | { readonly expanded: false }
+  | {
+      readonly expanded: false;
+      readonly size?: number;
+      readonly sizeVariant?: DesktopSidekickSize;
+    }
   | {
       readonly expanded: true;
       readonly size: number;
+      readonly sizeVariant?: DesktopSidekickSize;
       readonly gap: number;
       readonly placement: "above" | "below";
       readonly align: "start" | "end";

@@ -9,6 +9,67 @@ export const SIDEKICK_SIZE_PX: Record<DesktopSidekickSize, number> = {
   large: 184,
 };
 
+/** Proportional row and panel styling per sidekick size. */
+export interface SidekickRowDimensions {
+  readonly panelWidth: number;
+  readonly panelGap: number;
+  readonly rowHeight: number;
+  readonly rowGap: number;
+  readonly rowRadius: number;
+  readonly rowFontSize: number;
+  readonly statusFontSize: number;
+  readonly statusDotSize: number;
+  readonly arrowSize: number;
+  readonly moreHeight: number;
+  readonly moreFontSize: number;
+  readonly moreRadius: number;
+}
+
+export const SIDEKICK_ROW_DIMENSIONS: Record<DesktopSidekickSize, SidekickRowDimensions> = {
+  small: {
+    panelWidth: 240,
+    panelGap: 5,
+    rowHeight: 28,
+    rowGap: 8,
+    rowRadius: 8,
+    rowFontSize: 11,
+    statusFontSize: 10,
+    statusDotSize: 5,
+    arrowSize: 8,
+    moreHeight: 20,
+    moreFontSize: 10,
+    moreRadius: 8,
+  },
+  medium: {
+    panelWidth: 280,
+    panelGap: 6,
+    rowHeight: 32,
+    rowGap: 10,
+    rowRadius: 10,
+    rowFontSize: 12,
+    statusFontSize: 11,
+    statusDotSize: 6,
+    arrowSize: 9,
+    moreHeight: 24,
+    moreFontSize: 11,
+    moreRadius: 10,
+  },
+  large: {
+    panelWidth: 340,
+    panelGap: 8,
+    rowHeight: 40,
+    rowGap: 12,
+    rowRadius: 12,
+    rowFontSize: 14,
+    statusFontSize: 12.5,
+    statusDotSize: 7,
+    arrowSize: 11,
+    moreHeight: 28,
+    moreFontSize: 12,
+    moreRadius: 12,
+  },
+};
+
 const SCREEN_MARGIN_PX = 24;
 
 export interface SidekickRect {

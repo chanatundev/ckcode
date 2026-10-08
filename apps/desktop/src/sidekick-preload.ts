@@ -110,12 +110,29 @@ function render() {
 function applyLayout(layout: SidekickWindowLayout) {
   const body = document.body;
   body.classList.toggle("expanded", layout.expanded);
+  if (layout.size !== undefined) {
+    body.style.setProperty("--size", `${layout.size}px`);
+  }
+  const sizeVariant =
+    layout.sizeVariant ??
+    (layout.size !== undefined
+      ? layout.size <= 100
+        ? "small"
+        : layout.size >= 160
+          ? "large"
+          : "medium"
+      : undefined);
+  if (sizeVariant !== undefined) {
+    body.dataset.size = sizeVariant;
+    body.classList.toggle("size-small", sizeVariant === "small");
+    body.classList.toggle("size-medium", sizeVariant === "medium");
+    body.classList.toggle("size-large", sizeVariant === "large");
+  }
   if (!layout.expanded) {
     // The main process collapses before moving or resizing the sprite; reopen once it settles.
     if (listVisible()) requestExpand();
     return;
   }
-  body.style.setProperty("--size", `${layout.size}px`);
   body.style.setProperty("--gap", `${layout.gap}px`);
   body.classList.toggle("above", layout.placement === "above");
   body.classList.toggle("below", layout.placement === "below");

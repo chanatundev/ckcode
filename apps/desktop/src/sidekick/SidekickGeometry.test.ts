@@ -5,10 +5,41 @@ import {
   expandSidekickBounds,
   resizeSidekickPosition,
   resolveSidekickPosition,
+  SIDEKICK_ROW_DIMENSIONS,
+  SIDEKICK_SIZE_PX,
 } from "./SidekickGeometry.ts";
 
 const PRIMARY = { x: 0, y: 25, width: 1440, height: 875 };
 const LEFT = { x: -1920, y: 0, width: 1920, height: 1080 };
+
+describe("SIDEKICK_ROW_DIMENSIONS", () => {
+  it("links thread row dimensions monotonically to sidekick size", () => {
+    const { small, medium, large } = SIDEKICK_ROW_DIMENSIONS;
+
+    expect(small.rowHeight).toBeLessThan(medium.rowHeight);
+    expect(medium.rowHeight).toBeLessThan(large.rowHeight);
+
+    expect(small.panelWidth).toBeLessThan(medium.panelWidth);
+    expect(medium.panelWidth).toBeLessThan(large.panelWidth);
+
+    expect(small.rowFontSize).toBeLessThan(medium.rowFontSize);
+    expect(medium.rowFontSize).toBeLessThan(large.rowFontSize);
+
+    expect(small.moreHeight).toBeLessThan(medium.moreHeight);
+    expect(medium.moreHeight).toBeLessThan(large.moreHeight);
+  });
+
+  it("defines dimensions for every supported sidekick size", () => {
+    for (const size of Object.keys(SIDEKICK_SIZE_PX) as (keyof typeof SIDEKICK_SIZE_PX)[]) {
+      const dimensions = SIDEKICK_ROW_DIMENSIONS[size];
+      expect(dimensions).toBeDefined();
+      expect(dimensions.panelWidth).toBeGreaterThan(0);
+      expect(dimensions.rowHeight).toBeGreaterThan(0);
+      expect(dimensions.rowFontSize).toBeGreaterThan(0);
+      expect(dimensions.arrowSize).toBeGreaterThan(0);
+    }
+  });
+});
 
 describe("resolveSidekickPosition", () => {
   it("defaults to the primary display's bottom-right corner", () => {
@@ -120,5 +151,21 @@ describe("expandSidekickBounds", () => {
       workArea: PRIMARY,
     });
     expect(bounds.width).toBe(184);
+  });
+
+  it("expands appropriately for linked panel widths for each sidekick size", () => {
+    for (const size of Object.keys(SIDEKICK_SIZE_PX) as (keyof typeof SIDEKICK_SIZE_PX)[]) {
+      const spriteSize = SIDEKICK_SIZE_PX[size];
+      const { panelWidth } = SIDEKICK_ROW_DIMENSIONS[size];
+      const sprite = defaultSidekickPosition(PRIMARY, spriteSize);
+      const { bounds } = expandSidekickBounds({
+        sprite,
+        size: spriteSize,
+        panel: { width: panelWidth, height: 120 },
+        workArea: PRIMARY,
+      });
+      expect(bounds.width).toBe(panelWidth);
+      expect(bounds.height).toBe(spriteSize + 10 + 120);
+    }
   });
 });

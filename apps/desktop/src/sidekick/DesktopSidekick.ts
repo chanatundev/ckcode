@@ -110,6 +110,7 @@ export const make = Effect.gen(function* () {
   // Electron objects live on the main thread; plain mutable state is enough.
   let sidekickWindow: Electron.BrowserWindow | null = null;
   let windowSize = 0;
+  let windowSizeVariant: DesktopSidekickSize = "medium";
   let dragOrigin: { readonly x: number; readonly y: number } | null = null;
   // Where the sprite sits inside the window while the hover list is open.
   // Null while collapsed, when the window is exactly the sprite.
@@ -133,7 +134,11 @@ export const make = Effect.gen(function* () {
     const sprite = spritePosition(window);
     spriteOffset = null;
     window.setBounds({ ...sprite, width: windowSize, height: windowSize });
-    sendLayout(window, { expanded: false });
+    sendLayout(window, {
+      expanded: false,
+      size: windowSize,
+      sizeVariant: windowSizeVariant,
+    });
   };
 
   /** Grows the window around the sprite so the hover list fits, keeping the sprite still. */
@@ -157,6 +162,7 @@ export const make = Effect.gen(function* () {
     sendLayout(window, {
       expanded: true,
       size: windowSize,
+      sizeVariant: windowSizeVariant,
       gap: SIDEKICK_PANEL_GAP_PX,
       ...layout,
     });
@@ -465,15 +471,21 @@ export const make = Effect.gen(function* () {
     window.once("ready-to-show", () => {
       if (!window.isDestroyed()) window.showInactive();
     });
-    window.webContents.on("did-finish-load", () =>
-      runFork(sendStatus.pipe(Effect.andThen(sendThreadsMode))),
-    );
+    window.webContents.on("did-finish-load", () => {
+      sendLayout(window, {
+        expanded: false,
+        size: windowSize,
+        sizeVariant: windowSizeVariant,
+      });
+      runFork(sendStatus.pipe(Effect.andThen(sendThreadsMode)));
+    });
     window.once("closed", () => {
       if (sidekickWindow === window) sidekickWindow = null;
     });
     yield* electronWindow.markAuxiliary(window);
     sidekickWindow = window;
     windowSize = size;
+    windowSizeVariant = settings.sidekickSize;
     spriteOffset = null;
     void window.loadFile(htmlPath.value).catch(() => undefined);
   });
@@ -498,7 +510,7 @@ export const make = Effect.gen(function* () {
     }
     yield* sendThreadsMode;
     const size = SIDEKICK_SIZE_PX[settings.sidekickSize];
-    if (size === windowSize) return;
+    if (size === windowSize && settings.sidekickSize === windowSizeVariant) return;
     collapse(window);
     const [x, y] = window.getPosition();
     const next = resolvePosition(
@@ -506,7 +518,13 @@ export const make = Effect.gen(function* () {
       size,
     );
     windowSize = size;
+    windowSizeVariant = settings.sidekickSize;
     window.setBounds({ ...next, width: size, height: size });
+    sendLayout(window, {
+      expanded: false,
+      size: windowSize,
+      sizeVariant: windowSizeVariant,
+    });
     yield* persistPosition(next);
   }).pipe(Effect.withSpan("desktop.sidekick.sync"));
 

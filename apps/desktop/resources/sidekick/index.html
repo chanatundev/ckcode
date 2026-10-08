@@ -8,6 +8,92 @@
     />
     <title>Sidekick</title>
     <style>
+      :root {
+        --size: 136px;
+        --gap: 10px;
+        --panel-width: 280px;
+        --panel-gap: 6px;
+        --row-height: 32px;
+        --row-padding: 0 10px 0 12px;
+        --row-radius: 10px;
+        --row-gap: 10px;
+        --row-font-size: 12px;
+        --status-font-size: 11px;
+        --status-gap: 5px;
+        --status-dot-size: 6px;
+        --arrow-size: 9px;
+        --more-height: 24px;
+        --more-font-size: 11px;
+        --more-radius: 10px;
+
+        --surface: #ffffff;
+        --surface-hover: #f4f4f5;
+        --border: #e4e4e7;
+        --foreground: #27272a;
+        --muted-foreground: #71717a;
+        --shadow: 0 4px 12px rgb(0 0 0 / 0.12);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --surface: #111111;
+          --surface-hover: #1a1a1a;
+          --border: rgb(255 255 255 / 0.08);
+          --foreground: #f5f5f5;
+          --muted-foreground: #8b8b8b;
+          --shadow: 0 6px 16px rgb(0 0 0 / 0.55);
+        }
+      }
+      body[data-size="small"],
+      body.size-small {
+        --panel-width: 240px;
+        --panel-gap: 5px;
+        --row-height: 28px;
+        --row-padding: 0 9px 0 11px;
+        --row-radius: 8px;
+        --row-gap: 8px;
+        --row-font-size: 11px;
+        --status-font-size: 10px;
+        --status-gap: 4px;
+        --status-dot-size: 5px;
+        --arrow-size: 8px;
+        --more-height: 20px;
+        --more-font-size: 10px;
+        --more-radius: 8px;
+      }
+      body[data-size="medium"],
+      body.size-medium {
+        --panel-width: 280px;
+        --panel-gap: 6px;
+        --row-height: 32px;
+        --row-padding: 0 10px 0 12px;
+        --row-radius: 10px;
+        --row-gap: 10px;
+        --row-font-size: 12px;
+        --status-font-size: 11px;
+        --status-gap: 5px;
+        --status-dot-size: 6px;
+        --arrow-size: 9px;
+        --more-height: 24px;
+        --more-font-size: 11px;
+        --more-radius: 10px;
+      }
+      body[data-size="large"],
+      body.size-large {
+        --panel-width: 340px;
+        --panel-gap: 8px;
+        --row-height: 40px;
+        --row-padding: 0 14px 0 16px;
+        --row-radius: 12px;
+        --row-gap: 12px;
+        --row-font-size: 14px;
+        --status-font-size: 12.5px;
+        --status-gap: 6px;
+        --status-dot-size: 7px;
+        --arrow-size: 11px;
+        --more-height: 28px;
+        --more-font-size: 12px;
+        --more-radius: 12px;
+      }
       html,
       body {
         width: 100%;
@@ -17,7 +103,7 @@
         background: transparent;
         user-select: none;
         font:
-          12px / 1.3 -apple-system,
+          var(--row-font-size, 12px) / 1.3 -apple-system,
           BlinkMacSystemFont,
           "Segoe UI",
           system-ui,
@@ -91,10 +177,10 @@
         position: absolute;
         top: 0;
         left: 0;
-        width: 280px;
+        width: var(--panel-width, 280px);
         display: flex;
         flex-direction: column;
-        gap: 6px;
+        gap: var(--panel-gap, 6px);
         visibility: hidden;
       }
       body.expanded #panel {
@@ -116,36 +202,16 @@
       body.expanded.start #panel {
         left: 0;
       }
-      /* Mirrors the app's default popover surface and sidebar status pills. The
-         desktop follows the app's light/dark choice, so the media query does too. */
-      :root {
-        --surface: #ffffff;
-        --surface-hover: #f4f4f5;
-        --border: #e4e4e7;
-        --foreground: #27272a;
-        --muted-foreground: #71717a;
-        --shadow: 0 4px 12px rgb(0 0 0 / 0.12);
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --surface: #111111;
-          --surface-hover: #1a1a1a;
-          --border: rgb(255 255 255 / 0.08);
-          --foreground: #f5f5f5;
-          --muted-foreground: #8b8b8b;
-          --shadow: 0 6px 16px rgb(0 0 0 / 0.55);
-        }
-      }
       .session {
         position: relative;
         display: flex;
         align-items: center;
-        gap: 10px;
-        height: 32px;
-        padding: 0 10px 0 12px;
+        gap: var(--row-gap, 10px);
+        height: var(--row-height, 32px);
+        padding: var(--row-padding, 0 10px 0 12px);
         box-sizing: border-box;
         border: 1px solid var(--border);
-        border-radius: 10px;
+        border-radius: var(--row-radius, 10px);
         background: var(--surface);
         box-shadow: var(--shadow);
         color: var(--foreground);
@@ -167,15 +233,15 @@
         display: inline-flex;
         flex: none;
         align-items: center;
-        gap: 5px;
+        gap: var(--status-gap, 5px);
         color: var(--tone);
-        font-size: 11px;
+        font-size: var(--status-font-size, 11px);
         white-space: nowrap;
       }
       .status::before {
         content: "";
-        width: 6px;
-        height: 6px;
+        width: var(--status-dot-size, 6px);
+        height: var(--status-dot-size, 6px);
         border-radius: 50%;
         background: var(--dot);
       }
@@ -234,42 +300,44 @@
       body.expanded .session:first-child::after {
         content: "";
         position: absolute;
-        width: 9px;
-        height: 9px;
+        width: var(--arrow-size, 9px);
+        height: var(--arrow-size, 9px);
         border: 1px solid var(--border);
         background: inherit;
         transform: rotate(45deg);
       }
       body.expanded.above .session:first-child::after {
-        bottom: -5.5px;
+        bottom: calc(var(--arrow-size, 9px) * -0.5 - 1px);
         border-top: none;
         border-left: none;
       }
       body.expanded.below .session:first-child::after {
-        top: -5.5px;
+        top: calc(var(--arrow-size, 9px) * -0.5 - 1px);
         border-right: none;
         border-bottom: none;
       }
       body.expanded.end .session:first-child::after {
-        right: calc(var(--size) / 2 - 5px);
+        right: calc(var(--size) / 2 - var(--arrow-size, 9px) / 2);
       }
       body.expanded.start .session:first-child::after {
-        left: calc(var(--size) / 2 - 5px);
+        left: calc(var(--size) / 2 - var(--arrow-size, 9px) / 2);
       }
       .more {
-        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: var(--more-height, 24px);
         border: 1px solid var(--border);
-        border-radius: 10px;
+        border-radius: var(--more-radius, 10px);
         box-sizing: border-box;
         background: var(--surface);
         color: var(--muted-foreground);
-        font-size: 11px;
-        line-height: 22px;
+        font-size: var(--more-font-size, 11px);
         text-align: center;
       }
     </style>
   </head>
-  <body>
+  <body data-size="medium">
     <div id="panel"></div>
     <div id="sprite">
       <img class="sprite" data-state="approval" src="approval.webp" alt="" />
