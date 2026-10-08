@@ -33,7 +33,7 @@ When a message includes a supported public GitHub, GitLab, Linear, or Jira issue
 
 ### Settled-project shortcuts
 
-The web client groups projects with settled threads and lets you open a project in a new chat.
+The web sidebar groups projects without open chats in a collapsible “Settled projects” section. Expand it to open a project in a new chat.
 
 ### Upstream nightly notice
 

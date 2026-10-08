@@ -33,6 +33,7 @@ function thread(id: string, overrides: Partial<SidekickThreadInput> = {}): Sidek
     id: ThreadId.make(id),
     title: `Thread ${id}`,
     archivedAt: null,
+    createdAt: dt(-60_000),
     updatedAt: dt(-60_000),
     status: "idle",
     activityRunStatus: null,
@@ -193,34 +194,63 @@ describe("resolveSidekickSnapshot", () => {
     expect(asleep).toMatchObject({ state: "sleeping", nextChangeAtMs: null });
   });
 
-  it("lists every non-idle thread, most urgent first, capped with a remainder", () => {
+  it("lists non-idle threads ordered by first messaged (oldest first, so sessions[0] is bottom-most in panel), capped with a remainder", () => {
     const snapshot = resolveSidekickSnapshot({
       lastVisitedAt: neverVisited,
       nowMs: NOW,
       environments: [
         env([
-          running("w1"),
-          thread("idle"),
-          running("w3"),
-          running("w2"),
-          thread("done", { latestRunCompletedAt: dt(-10_000) }),
+          running("w1", { createdAt: dt(-50_000) }),
+          thread("idle", { createdAt: dt(-60_000) }),
+          running("w3", { createdAt: dt(-30_000) }),
+          running("w2", { createdAt: dt(-40_000) }),
+          thread("done", { createdAt: dt(-20_000), latestRunCompletedAt: dt(-10_000) }),
         ]),
         env(
           [
-            thread("ask", { pendingRuntimeRequest: pendingUserInput("ask") }),
-            thread("approve", { pendingRuntimeRequest: pendingApproval("approve") }),
+            thread("ask", {
+              createdAt: dt(-15_000),
+              pendingRuntimeRequest: pendingUserInput("ask"),
+            }),
+            thread("approve", {
+              createdAt: dt(-10_000),
+              pendingRuntimeRequest: pendingApproval("approve"),
+            }),
           ],
           REMOTE,
         ),
       ],
     });
+    // First messaged (w1 at -50s) is sessions[0] (which renders at the bottom in column-reverse).
     expect(snapshot.sessions).toEqual([
-      { environmentId: REMOTE, threadId: "approve", title: "Thread approve", state: "approval" },
-      { environmentId: REMOTE, threadId: "ask", title: "Thread ask", state: "input" },
       { environmentId: LOCAL, threadId: "w1", title: "Thread w1", state: "working" },
       { environmentId: LOCAL, threadId: "w2", title: "Thread w2", state: "working" },
+      { environmentId: LOCAL, threadId: "w3", title: "Thread w3", state: "working" },
+      { environmentId: REMOTE, threadId: "ask", title: "Thread ask", state: "input" },
     ]);
     expect(snapshot.moreCount).toBe(1);
+  });
+
+  it("does not change shown threads order when an agent performs actions and updates updatedAt while working", () => {
+    const thread1 = running("t1", { createdAt: dt(-20_000), updatedAt: dt(-20_000) });
+    const thread2 = running("t2", { createdAt: dt(-10_000), updatedAt: dt(-10_000) });
+
+    const before = resolveSidekickSnapshot({
+      lastVisitedAt: neverVisited,
+      nowMs: NOW,
+      environments: [env([thread1, thread2])],
+    });
+    expect(before.sessions.map((s) => s.threadId)).toEqual(["t1", "t2"]);
+
+    // Agent in thread 1 runs a command or streams tokens, bumping updatedAt to NOW.
+    const thread1Working = running("t1", { createdAt: dt(-20_000), updatedAt: dt(0) });
+    const after = resolveSidekickSnapshot({
+      lastVisitedAt: neverVisited,
+      nowMs: NOW,
+      environments: [env([thread1Working, thread2])],
+    });
+    // Order remains strictly identical: t1 (first messaged) stays sessions[0] (bottom-most).
+    expect(after.sessions.map((s) => s.threadId)).toEqual(["t1", "t2"]);
   });
 
   it("lists nothing when every thread is idle", () => {

@@ -40,6 +40,7 @@ export type SidekickThreadInput = Pick<
   | "id"
   | "title"
   | "archivedAt"
+  | "createdAt"
   | "updatedAt"
   | "status"
   | "activityRunStatus"
@@ -69,7 +70,7 @@ export interface SidekickSnapshot {
   readonly tooltip: string;
   /** Threads in `state`, longest-waiting first. Clicks cycle through these. */
   readonly targets: readonly ScopedThreadRef[];
-  /** Every non-idle thread, most urgent first, capped for the hover list. */
+  /** Every non-idle thread, first-messaged first (sessions[0] is bottom-most in panel), capped for the hover list. */
   readonly sessions: readonly DesktopSidekickSession[];
   /** Non-idle threads beyond `sessions`. */
   readonly moreCount: number;
@@ -164,6 +165,9 @@ function waitingSinceMs(thread: SidekickThreadInput, state: ThreadState): number
   if ((state === "error" || state === "success" || state === "plan") && completedAt !== null) {
     return completedAt;
   }
+  if (state === "working") {
+    return parseMs(thread.createdAt) ?? 0;
+  }
   return parseMs(thread.updatedAt) ?? 0;
 }
 
@@ -203,6 +207,12 @@ export function resolveSidekickSnapshot(input: {
     ThreadState,
     { ref: ScopedThreadRef; title: string; sinceMs: number }[]
   >();
+  const activeEntries: Array<{
+    ref: ScopedThreadRef;
+    title: string;
+    createdAtMs: number;
+    state: Exclude<ThreadState, "waiting">;
+  }> = [];
   let latestActivityMs = 0;
   for (const environment of input.environments) {
     if (!environment.connected || environment.threads === null) continue;
@@ -220,6 +230,15 @@ export function resolveSidekickSnapshot(input: {
         sinceMs: waitingSinceMs(thread, state),
       });
       byState.set(state, entries);
+
+      if (state !== "waiting") {
+        activeEntries.push({
+          ref: { environmentId: environment.environmentId, threadId: thread.id },
+          title: thread.title,
+          createdAtMs: parseMs(thread.createdAt) ?? 0,
+          state,
+        });
+      }
     }
   }
 
@@ -230,12 +249,9 @@ export function resolveSidekickSnapshot(input: {
   const topState = STATE_PRIORITY.find((state) => byState.has(state)) ?? "waiting";
   const top = (byState.get(topState) ?? []).toSorted(longestWaitingFirst);
 
-  const active = STATE_PRIORITY.flatMap((state) =>
-    state === "waiting"
-      ? []
-      : (byState.get(state) ?? [])
-          .toSorted(longestWaitingFirst)
-          .map((entry) => ({ ...entry, state })),
+  const active = activeEntries.toSorted(
+    (left, right) =>
+      left.createdAtMs - right.createdAtMs || left.ref.threadId.localeCompare(right.ref.threadId),
   );
   const sessions = active
     .slice(0, DESKTOP_SIDEKICK_MAX_SESSIONS)

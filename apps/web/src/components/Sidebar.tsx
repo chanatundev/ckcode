@@ -290,6 +290,7 @@ const SETTLED_TAIL_INITIAL_COUNT = 10;
 const SETTLED_TAIL_PAGE_COUNT = 25;
 // Fresh keys deliberately reset both shelves to collapsed for existing users.
 const SETTLED_SHELF_EXPANDED_KEY = "t3code:sidebar:settled-expanded";
+const SETTLED_PROJECTS_SHELF_EXPANDED_KEY = "t3code:sidebar:settled-projects-expanded";
 const SNOOZED_SHELF_EXPANDED_KEY = "t3code:sidebar:snoozed-expanded";
 const WORKING_SHELF_EXPANDED_KEY = "t3code:sidebar:working-expanded";
 
@@ -2869,6 +2870,11 @@ export default function Sidebar() {
     scopedProjectKeys,
     threadSearchQuery,
   ]);
+  const [settledProjectsShelfExpanded, setSettledProjectsShelfExpanded] = useLocalStorage(
+    SETTLED_PROJECTS_SHELF_EXPANDED_KEY,
+    false,
+    Schema.Boolean,
+  );
   const searchableThreads = useMemo(
     () => [
       ...pinnedThreads,
@@ -5467,47 +5473,51 @@ export default function Sidebar() {
                     ) : null}
                     {settledProjectGroups.length > 0 ? (
                       <>
-                        <li
-                          role="presentation"
-                          className="mt-1 list-none border-t border-sidebar-border/60"
-                        >
-                          <div className="flex h-8 items-center gap-2 px-2 text-xs font-medium text-sidebar-muted-foreground/60">
-                            <span className="shrink-0">Settled projects</span>
-                            <span
-                              aria-hidden
-                              className="h-px min-w-2 flex-1 bg-sidebar-border/60"
-                            />
-                          </div>
-                        </li>
-                        {settledProjectGroups.map((projectGroup) => (
-                          <li
-                            key={`settled-project:${projectGroup.projectKey}`}
-                            className="list-none"
+                        <li className="mt-1 list-none border-t border-sidebar-border/60 pt-1">
+                          <CollapsibleSectionHeader
+                            onClick={() => setSettledProjectsShelfExpanded((expanded) => !expanded)}
+                            expanded={settledProjectsShelfExpanded}
+                            data-testid="sidebar-settled-projects-shelf-toggle"
                           >
-                            <div className="flex h-9 items-center gap-2 rounded-md px-2.5 text-sm text-sidebar-foreground">
-                              <ProjectFavicon project={projectGroup} className="size-4 shrink-0" />
-                              <span className="min-w-0 flex-1 truncate">
-                                {projectGroup.displayName}
-                              </span>
-                              {showProjectEnvironments ? (
-                                <ProjectEnvironmentBadge
-                                  group={projectGroup}
-                                  primaryEnvironmentId={primaryEnvironmentId}
-                                  machineByEnvironmentId={environmentMachineById}
-                                />
-                              ) : null}
-                              <Button
-                                size="xs"
-                                variant="ghost-muted"
-                                aria-label={`Open ${projectGroup.displayName} in a new chat`}
-                                onClick={() => openSettledProject(projectGroup)}
+                            {settledProjectsShelfExpanded
+                              ? "Settled projects"
+                              : `Settled projects (${settledProjectGroups.length})`}
+                          </CollapsibleSectionHeader>
+                        </li>
+                        {settledProjectsShelfExpanded
+                          ? settledProjectGroups.map((projectGroup) => (
+                              <li
+                                key={`settled-project:${projectGroup.projectKey}`}
+                                className="list-none"
                               >
-                                <ExternalLinkIcon aria-hidden className="size-3" />
-                                Open
-                              </Button>
-                            </div>
-                          </li>
-                        ))}
+                                <div className="flex h-9 items-center gap-2 rounded-md px-2.5 text-sm text-sidebar-foreground">
+                                  <ProjectFavicon
+                                    project={projectGroup}
+                                    className="size-4 shrink-0"
+                                  />
+                                  <span className="min-w-0 flex-1 truncate">
+                                    {projectGroup.displayName}
+                                  </span>
+                                  {showProjectEnvironments ? (
+                                    <ProjectEnvironmentBadge
+                                      group={projectGroup}
+                                      primaryEnvironmentId={primaryEnvironmentId}
+                                      machineByEnvironmentId={environmentMachineById}
+                                    />
+                                  ) : null}
+                                  <Button
+                                    size="xs"
+                                    variant="ghost-muted"
+                                    aria-label={`Open ${projectGroup.displayName} in a new chat`}
+                                    onClick={() => openSettledProject(projectGroup)}
+                                  >
+                                    <ExternalLinkIcon aria-hidden className="size-3" />
+                                    Open
+                                  </Button>
+                                </div>
+                              </li>
+                            ))
+                          : null}
                       </>
                     ) : null}
                   </ul>
