@@ -14,10 +14,6 @@ On desktop, the Sidekick summarizes agent activity across threads and connected 
 
 Type `/pipeline` to choose a provider and model for each stage. CKcode builds the prompt and places it in the composer for review before you send it.
 
-### Persistent goals in the v2 thread workflow
-
-Upstream provides native `/goal` commands. CKcode also carries the saved goal into each provider turn in its v2 workflow and preserves it across native thread forks and provider handoffs. Use `/goal` to view or set the thread's goal and `/goal clear` to remove it.
-
 ### Issue details in provider context
 
 When a message includes a supported public GitHub, GitLab, Linear, or Jira issue URL, CKcode adds available issue details to the provider prompt. If it cannot fetch details, it sends the link unchanged.

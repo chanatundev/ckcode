@@ -1,10 +1,18 @@
-import { McpCapabilityUnavailableError, TrimmedNonEmptyString } from "@t3tools/contracts";
+import {
+  McpCapabilityUnavailableError,
+  OrchestratorMcpFailure,
+  TrimmedNonEmptyString,
+} from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
-import { Tool, Toolkit } from "effect/unstable/ai";
+import { Tool, Toolkit } from "effect/ai";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 
-const dependencies = [McpInvocationContext.McpInvocationContext];
+const dependencies = [
+  McpInvocationContext.McpInvocationContext,
+  ThreadManagementService.ThreadManagementService,
+];
 
 export class ComputerOperationError extends Schema.TaggedError<ComputerOperationError>()(
   "ComputerOperationError",
@@ -21,6 +29,7 @@ export class ComputerOperationError extends Schema.TaggedError<ComputerOperation
 export const ComputerToolError = Schema.Union([
   McpCapabilityUnavailableError,
   ComputerOperationError,
+  OrchestratorMcpFailure,
 ]);
 
 const ComputerAppsTool = Tool.make("computer_list_apps", {
@@ -99,9 +108,11 @@ export const ComputerScreenshotTool = Tool.make("computer_screenshot", {
   description:
     "Capture a PNG screenshot of the active desktop app's window and return it as an image. If no accessible foreground window is available, captures the desktop.",
   parameters: Schema.Struct({
-    includeImage: Schema.optional(Schema.Boolean.annotate({
-      description: "Include image content in the result (default true).",
-    })),
+    includeImage: Schema.optional(
+      Schema.Boolean.annotate({
+        description: "Include image content in the result (default true).",
+      }),
+    ),
   }),
   success: Schema.Struct({
     app: Schema.NullOr(Schema.String),
@@ -136,8 +147,7 @@ const ComputerClickTool = Tool.make("computer_click", {
   .annotate(Tool.OpenWorld, true);
 
 const ComputerTypeTextTool = Tool.make("computer_type_text", {
-  description:
-    "Type literal text into the desktop control that currently has keyboard focus.",
+  description: "Type literal text into the desktop control that currently has keyboard focus.",
   parameters: Schema.Struct({
     text: Schema.String.check(Schema.isMaxLength(4_000)),
   }),

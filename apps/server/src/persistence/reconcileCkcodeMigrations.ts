@@ -1,5 +1,5 @@
 import * as Effect from "effect/Effect";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 // Fork schema must never claim upstream migration ids; use idempotent ensure steps instead.
 export const reconcileCkcodeMigrations = Effect.fn("reconcileCkcodeMigrations")(function* () {

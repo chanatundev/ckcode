@@ -1,10 +1,12 @@
 import * as Effect from "effect/Effect";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import * as McpToolAccess from "../../McpToolAccess.ts";
 import {
   ComputerOperationError,
   ComputerScreenshotToolkit,
   ComputerStandardToolkit,
+  ComputerToolkit,
 } from "./tools.ts";
 
 const MAX_TREE_CHARS = 20_000;
@@ -30,7 +32,7 @@ const withComputerAccess = <A>(name: string, run: () => Promise<A>) =>
   });
 
 const handlers = {
-  computer_list_apps: (input) =>
+  computer_list_apps: McpToolAccess.readsAsCaller((input) =>
     withComputerAccess("computer_list_apps", async () => {
       const { App } = await import("@crowecawcaw/xa11y");
       const apps = await App.list();
@@ -44,7 +46,8 @@ const handlers = {
         truncated: apps.length > limit,
       };
     }),
-  computer_accessibility_tree: (input) =>
+  ),
+  computer_accessibility_tree: McpToolAccess.readsAsCaller((input) =>
     withComputerAccess("computer_accessibility_tree", async () => {
       const { App } = await import("@crowecawcaw/xa11y");
       const app = input.app
@@ -58,7 +61,8 @@ const handlers = {
         truncated: rawTree.length > MAX_TREE_CHARS,
       };
     }),
-  computer_activate_app: (input) =>
+  ),
+  computer_activate_app: McpToolAccess.actsAsCaller((input) =>
     withComputerAccess("computer_activate_app", async () => {
       const { App } = await import("@crowecawcaw/xa11y");
       const app = await App.byName(input.app, { timeout: 0 });
@@ -76,7 +80,8 @@ const handlers = {
       await window.focus();
       return { app: app.name, window: window.name ?? "" };
     }),
-  computer_screenshot: (input) =>
+  ),
+  computer_screenshot: McpToolAccess.readsAsCaller((input) =>
     withComputerAccess("computer_screenshot", async () => {
       const imported = await import("@crowecawcaw/xa11y");
       const xa11y =
@@ -106,31 +111,33 @@ const handlers = {
         },
       };
     }),
-  computer_click: (input) =>
+  ),
+  computer_click: McpToolAccess.actsAsCaller((input) =>
     withComputerAccess("computer_click", async () => {
       const { inputSim } = await import("@crowecawcaw/xa11y");
       await inputSim().click([input.x, input.y]);
       return { ok: true };
     }),
-  computer_type_text: (input) =>
+  ),
+  computer_type_text: McpToolAccess.actsAsCaller((input) =>
     withComputerAccess("computer_type_text", async () => {
       const { inputSim } = await import("@crowecawcaw/xa11y");
       await inputSim().typeText(input.text);
       return { ok: true };
     }),
-  computer_press_key: (input) =>
+  ),
+  computer_press_key: McpToolAccess.actsAsCaller((input) =>
     withComputerAccess("computer_press_key", async () => {
       const { inputSim } = await import("@crowecawcaw/xa11y");
       await inputSim().press(input.key);
       return { ok: true };
     }),
-} satisfies Parameters<typeof ComputerStandardToolkit.toLayer>[0] &
-  Parameters<typeof ComputerScreenshotToolkit.toLayer>[0];
+  ),
+} satisfies McpToolAccess.Handlers<typeof ComputerToolkit.tools>;
 
 const { computer_screenshot, ...standardHandlers } = handlers;
 
-export const ComputerStandardToolkitHandlersLive =
-  ComputerStandardToolkit.toLayer(standardHandlers);
-export const ComputerScreenshotToolkitHandlersLive = ComputerScreenshotToolkit.toLayer({
+export const layerStandard = McpToolAccess.toLayer(ComputerStandardToolkit, standardHandlers);
+export const layerScreenshot = McpToolAccess.toLayer(ComputerScreenshotToolkit, {
   computer_screenshot,
 });

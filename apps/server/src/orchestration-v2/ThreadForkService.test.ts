@@ -37,7 +37,6 @@ function makeSourceThread(): OrchestrationV2AppThread {
     id: sourceThreadId,
     projectId: ProjectId.make("project:fork-snooze"),
     title: "Snoozed source",
-    goal: "Finish the migration",
     providerInstanceId,
     modelSelection,
     runtimeMode: "full-access",
@@ -148,7 +147,6 @@ it.effect("keeps a fork awake when its source thread is snoozed", () =>
 
     assert.isNull(result.targetThread.snoozedUntil);
     assert.isNull(result.targetThread.snoozedAt);
-    assert.equal(result.targetThread.goal, sourceThread.goal);
     assert.equal(result.targetThread.projectId, sourceThread.projectId);
     assert.equal(result.targetThread.providerInstanceId, sourceThread.providerInstanceId);
     assert.deepEqual(result.targetThread.modelSelection, sourceThread.modelSelection);

@@ -16,20 +16,18 @@ import {
   RuntimeRequestId,
   ThreadId,
   TurnItemId,
-  ThreadGoal,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Schema from "effect/Schema";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import * as SqlClient from "effect/sql/SqlClient";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
-import type { ProviderAdapterV2Shape } from "./ProviderAdapter.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
-import { makeOrchestratorV2ReplayLayerWithRegistry } from "./testkit/ProviderReplayHarness.ts";
+import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
+import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 
 const instanceId = ProviderInstanceId.make("codex");
 const modelSelection = { instanceId, model: "gpt-5.1-codex" };
@@ -39,15 +37,15 @@ const adapter = {
   getCapabilities: () => Effect.succeed(CodexProviderCapabilitiesV2),
   planSelectionTransition: () => Effect.succeed({ type: "apply_on_next_turn" as const }),
   openSession: () => Effect.die("No provider process needed for metadata controls"),
-} as ProviderAdapterV2Shape;
-const database = SqlitePersistenceMemory;
-const testLayer = Layer.mergeAll(
-  database,
-  ProjectionStore.layer.pipe(Layer.provide(database)),
-  makeOrchestratorV2ReplayLayerWithRegistry(
+} as ProviderAdapter.ProviderAdapterV2["Service"];
+const layerDatabase = SqlitePersistence.layerMemory;
+const layerTest = Layer.mergeAll(
+  layerDatabase,
+  ProjectionStore.layer.pipe(Layer.provide(layerDatabase)),
+  ProviderReplayHarness.layerWithRegistry(
     { name: "control-reads" },
-    ProviderAdapterRegistry.makeLayer([adapter]),
-    { databaseLayer: database, runEffectWorker: false },
+    ProviderAdapterRegistry.layerFromAdapters([adapter]),
+    { databaseLayer: layerDatabase, runEffectWorker: false },
   ),
 );
 
@@ -279,7 +277,7 @@ it.effect(
         threadId,
       });
       assert.isNotNull((yield* projections.getThread(threadId)).deletedAt);
-    }).pipe(Effect.provide(testLayer)),
+    }).pipe(Effect.provide(layerTest)),
 );
 
 it.effect("implements a proposed plan that the command projection leaves out", () =>
@@ -333,7 +331,7 @@ it.effect("implements a proposed plan that the command projection leaves out", (
     });
 
     assert.equal((yield* projections.getPlan(threadId, planId))?.status, "completed");
-  }).pipe(Effect.provide(testLayer)),
+  }).pipe(Effect.provide(layerTest)),
 );
 
 // Stop's settle follow-up runs after the provider interrupt returns, possibly
@@ -534,53 +532,95 @@ it.effect("settles only the stopped run's background work, once", () =>
       `${commandItem(2)}:running`,
       `${commandItem(3)}:running`,
     ]);
-  }).pipe(Effect.provide(testLayer)),
+  }).pipe(Effect.provide(layerTest)),
 );
 
-it.effect("sets, preserves and clears goals in thread details and shells", () =>
+it.effect("keeps delegated child pull-request links independent of the parent", () =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;
     const projections = yield* ProjectionStore.ProjectionStoreV2;
-    const threadId = ThreadId.make("thread:goal-metadata");
+    const parentThreadId = ThreadId.make("thread:parent-pr");
+    const projectId = ProjectId.make("project:parent-pr");
+    const parentPullRequest = {
+      projectId,
+      repository: "pingdotgg/t3code",
+      number: 123,
+      url: "https://github.com/pingdotgg/t3code/pull/123",
+    };
     yield* orchestrator.dispatch({
       type: "thread.create",
-      commandId: CommandId.make("goal:create"),
-      threadId,
-      projectId: ProjectId.make("project:goal-metadata"),
-      title: "Goal metadata",
+      commandId: CommandId.make("create-parent-pr"),
+      threadId: parentThreadId,
+      projectId,
+      title: "Parent with a linked PR",
       modelSelection,
       runtimeMode: "full-access",
       interactionMode: "default",
-      branch: null,
-      worktreePath: null,
+      branch: "feature/parent-pr",
+      worktreePath: "/repo-worktree",
       createdBy: "user",
       creationSource: "web",
     });
-    assert.isUndefined((yield* projections.getThreadProjection(threadId)).thread.goal);
-    for (const [operation, patch, expected] of [
-      ["set", { goal: "Finish the migration" }, "Finish the migration"],
-      ["preserve", { title: "New title" }, "Finish the migration"],
-      ["clear", { goal: null }, null],
-    ] as const) {
-      yield* orchestrator.dispatch({
-        type: "thread.metadata.update",
-        commandId: CommandId.make(`goal:${operation}`),
-        threadId,
-        ...patch,
-      });
-      assert.equal((yield* projections.getThreadProjection(threadId)).thread.goal, expected);
-      assert.equal((yield* projections.getThreadShell(threadId))?.goal, expected);
-      const snapshot = yield* projections.getShellSnapshot();
-      assert.equal(snapshot.threads.find((thread) => thread.id === threadId)?.goal, expected);
-    }
-  }).pipe(Effect.provide(testLayer)),
-);
+    yield* orchestrator.dispatch({
+      type: "thread.metadata.update",
+      commandId: CommandId.make("link-parent-pr"),
+      threadId: parentThreadId,
+      linkedPullRequest: parentPullRequest,
+    });
+    yield* orchestrator.dispatch({
+      type: "message.dispatch",
+      commandId: CommandId.make("start-parent-pr"),
+      threadId: parentThreadId,
+      messageId: MessageId.make("message:parent-pr"),
+      text: "Delegate a review",
+      attachments: [],
+      dispatchMode: { type: "start_immediately" },
+      createdBy: "user",
+      creationSource: "web",
+    });
+    const parent = yield* projections.getThreadProjection(parentThreadId);
+    const parentRun = parent.runs[0]!;
+    yield* orchestrator.dispatch({
+      type: "delegated_task.request",
+      commandId: CommandId.make("delegate-parent-pr"),
+      parentThreadId,
+      parentRunId: parentRun.id,
+      parentNodeId: parentRun.rootNodeId!,
+      task: "Review the changes",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      createdBy: "agent",
+      creationSource: "mcp",
+    });
+    const updatedParent = yield* projections.getThreadProjection(parentThreadId);
+    const childThreadId = updatedParent.subagents[0]!.childThreadId!;
+    const child = yield* projections.getThreadProjection(childThreadId);
+    assert.isNull(child.thread.linkedPullRequest);
+    assert.deepEqual(child.thread.pullRequests, []);
+    assert.equal(child.thread.branch, parent.thread.branch);
+    assert.equal(child.thread.worktreePath, parent.thread.worktreePath);
+    assert.equal(child.thread.lineage.parentThreadId, parentThreadId);
 
-it("requires trimmed, nonempty thread goals of at most 4,000 characters", () => {
-  const decode = Schema.decodeUnknownSync(ThreadGoal);
-  assert.equal(decode("x".repeat(4_000)), "x".repeat(4_000));
-  assert.equal(decode(" finish the migration "), "finish the migration");
-  assert.throws(() => decode("x".repeat(4_001)));
-  assert.throws(() => decode(""));
-  assert.throws(() => decode("   "));
-});
+    const childPullRequest = {
+      ...parentPullRequest,
+      number: 456,
+      url: "https://github.com/pingdotgg/t3code/pull/456",
+    };
+    yield* orchestrator.dispatch({
+      type: "thread.metadata.update",
+      commandId: CommandId.make("link-child-pr"),
+      threadId: childThreadId,
+      linkedPullRequest: childPullRequest,
+    });
+    const linkedChild = yield* projections.getThreadProjection(childThreadId);
+    assert.deepEqual(linkedChild.thread.linkedPullRequest, childPullRequest);
+    assert.deepEqual(
+      linkedChild.thread.pullRequests?.map((link) => link.number),
+      [456],
+    );
+    const parentAfterChildLink = yield* projections.getThreadProjection(parentThreadId);
+    assert.deepEqual(parentAfterChildLink.thread.linkedPullRequest, parentPullRequest);
+    assert.deepEqual(parentAfterChildLink.thread.pullRequests, parent.thread.pullRequests);
+  }).pipe(Effect.provide(layerTest)),
+);
